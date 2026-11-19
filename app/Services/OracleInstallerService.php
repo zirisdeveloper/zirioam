@@ -139,24 +139,31 @@ class OracleInstallerService
                 $vaultConn->switchContainer('CDB$ROOT');
             }
 
-            // 1. Privilèges de gestion des utilisateurs communs
-            $vaultConn->executeDdl("GRANT ALTER USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
-            $vaultConn->executeDdl("GRANT CREATE USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
-            $vaultConn->executeDdl("GRANT DROP USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
+            // 1. Privilèges de gestion des utilisateurs communs (tolérance si Realm Command Rule active sous Database Vault)
+            try {
+                $vaultConn->executeDdl("GRANT ALTER USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
+            } catch (\Throwable $e) {
+                // Sous Database Vault strict, ORA-47410 interdit les délégations de GRANT sur ALTER USER.
+                // Cela est normal : ZIRIOAM exécute alors les opérations utilisateurs directement via la session C##VOLTMANAGER.
+            }
+
+            try {
+                $vaultConn->executeDdl("GRANT CREATE USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+
+            try {
+                $vaultConn->executeDdl("GRANT DROP USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
+            } catch (\Throwable $e) {}
 
             // 2. Rôle Database Vault Account Manager (si configuré)
             try {
                 $vaultConn->executeDdl("GRANT DV_ACCTMGR TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
-            } catch (\Throwable $e) {
-                // Tolérance si le rôle DV_ACCTMGR n'est pas activé
-            }
+            } catch (\Throwable $e) {}
 
             // 3. Droit d'exécution sur le package d'orchestration
             try {
                 $vaultConn->executeDdl("GRANT EXECUTE ON C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS TO PUBLIC CONTAINER = ALL");
-            } catch (\Throwable $e) {
-                // Déjà accordé ou non bloquant
-            }
+            } catch (\Throwable $e) {}
         } finally {
             $vaultConn->close();
         }
@@ -237,10 +244,12 @@ class OracleInstallerService
             if ($reapplyGrants) {
                 try {
                     $this->executeSqlScript($this->installerPath . '/pdb/001_create_zirioam_owner.sql');
+                    $this->executeSqlScript($this->installerPath . '/pdb/002_create_tables.sql');
+                    $this->executeSqlScript($this->installerPath . '/pdb/003_create_sequences.sql');
                     $this->executeSqlScript($this->installerPath . '/pdb/004_create_roles.sql');
-                    $results[] = ['step' => $step++, 'name' => "Droits et rôles locaux PDB ({$targetContainer})", 'status' => 'SUCCESS', 'error' => null];
+                    $results[] = ['step' => $step++, 'name' => "Création schéma, tables et rôles locaux PDB ({$targetContainer})", 'status' => 'SUCCESS', 'error' => null];
                 } catch (\Throwable $e) {
-                    $results[] = ['step' => $step++, 'name' => "Droits et rôles locaux PDB", 'status' => 'FAILED', 'error' => $e->getMessage()];
+                    $results[] = ['step' => $step++, 'name' => "Schéma et tables locaux PDB", 'status' => 'FAILED', 'error' => $e->getMessage()];
                 }
             }
 
