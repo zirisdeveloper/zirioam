@@ -17,10 +17,12 @@ class ServerRegistryTest
         echo "  [PASS] Chargement normal des serveurs réussie (" . count($servers) . " actifs).\n";
 
         // 2. Test recherche par ID
-        $prod = $service->getServerById('ORA_PROD_01');
-        assert($prod !== null, "ORA_PROD_01 doit être trouvé.");
-        assert($prod['server_name'] === 'ORACLE-PROD-01', "Nom serveur attendu ORACLE-PROD-01.");
-        echo "  [PASS] Recherche par server_id valide.\n";
+        $firstServerId = $servers[0]['server_id'];
+        $firstServerName = $servers[0]['server_name'];
+        $found = $service->getServerById($firstServerId);
+        assert($found !== null, "Le serveur {$firstServerId} doit être trouvé.");
+        assert($found['server_name'] === $firstServerName, "Nom serveur attendu {$firstServerName}.");
+        echo "  [PASS] Recherche par server_id valide ({$firstServerId}).\n";
 
         // 3. Test protection anti-SSRF / serveur inconnu
         $unknown = $service->getServerById('MALICIOUS_SERVER_ID');

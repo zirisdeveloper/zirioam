@@ -5,7 +5,7 @@
 -- Objet  : Package PL/SQL d'orchestration commune des identités
 -- =====================================================================
 
-CREATE OR REPLACE PACKAGE C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AUTHID DEFINER AS
+CREATE OR REPLACE PACKAGE C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AUTHID CURRENT_USER AS
 
     -- Création d'une identité développeur dans le référentiel ZIRIOAM
     PROCEDURE register_developer (
@@ -19,10 +19,10 @@ CREATE OR REPLACE PACKAGE C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AUTHID DEFINER
     -- Provisionnement du compte Oracle commun réel (CREATE USER C##... CONTAINER = ALL)
     -- Attention : Aucun privilège CREATE SESSION n'est accordé à ce niveau !
     PROCEDURE provision_oracle_account (
-        p_username     IN VARCHAR2,
+        p_username      IN VARCHAR2,
         p_temp_password IN VARCHAR2,
-        p_dba_user     IN VARCHAR2,
-        p_client_ip    IN VARCHAR2 DEFAULT NULL
+        p_dba_user      IN VARCHAR2,
+        p_client_ip     IN VARCHAR2 DEFAULT NULL
     );
 
     -- Réinitialisation du mot de passe avec expiration immédiate
@@ -60,6 +60,28 @@ END PKG_ZIRIOAM_COMMON_OPS;
 /
 
 CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
+
+    -- Procédure d'audit placée en premier dans le corps pour visibilité totale
+    PROCEDURE log_audit (
+        p_action_type    IN VARCHAR2,
+        p_target_user    IN VARCHAR2,
+        p_details        IN VARCHAR2,
+        p_status         IN VARCHAR2,
+        p_dba_user       IN VARCHAR2,
+        p_client_ip      IN VARCHAR2 DEFAULT NULL,
+        p_correlation_id IN VARCHAR2 DEFAULT NULL
+    ) IS
+        PRAGMA AUTONOMOUS_TRANSACTION;
+    BEGIN
+        INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT
+            (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS, CLIENT_IP, CORRELATION_ID)
+        VALUES
+            (SYSTIMESTAMP, p_dba_user, p_action_type, p_target_user, p_details, p_status, p_client_ip, p_correlation_id);
+        COMMIT;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+    END log_audit;
 
     FUNCTION get_oracle_user(p_username IN VARCHAR2) RETURN VARCHAR2 IS
         v_clean VARCHAR2(128);
@@ -117,7 +139,7 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
 
         -- Création stricte du compte commun avec mot de passe expiré immédiatement
         -- IMPORTANT : AUCUN PRIVILÈGE CREATE SESSION N'EST DONNÉ ICI
-        v_sql := 'CREATE USER ' || DBMS_ASSERT.ENQUOTE_NAME(v_oracle_user, FALSE) || 
+        v_sql := 'CREATE USER ' || v_oracle_user || 
                  ' IDENTIFIED BY "' || p_temp_password || '" ' ||
                  ' PASSWORD EXPIRE CONTAINER = ALL';
         
@@ -142,7 +164,7 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
         v_oracle_user := get_oracle_user(p_username);
 
         -- Exécution de l'ordre ALTER USER ... PASSWORD EXPIRE CONTAINER = ALL
-        v_sql := 'ALTER USER ' || DBMS_ASSERT.ENQUOTE_NAME(v_oracle_user, FALSE) || 
+        v_sql := 'ALTER USER ' || v_oracle_user || 
                  ' IDENTIFIED BY "' || p_temp_password || '" ' ||
                  ' PASSWORD EXPIRE CONTAINER = ALL';
         
@@ -173,7 +195,7 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
         v_oracle_user VARCHAR2(128);
     BEGIN
         v_oracle_user := get_oracle_user(p_username);
-        EXECUTE IMMEDIATE 'ALTER USER ' || DBMS_ASSERT.ENQUOTE_NAME(v_oracle_user, FALSE) || ' ACCOUNT LOCK CONTAINER = ALL';
+        EXECUTE IMMEDIATE 'ALTER USER ' || v_oracle_user || ' ACCOUNT LOCK CONTAINER = ALL';
         log_audit('LOCK_ACCOUNT', v_oracle_user, 'Compte verrouillé dans toute la CDB', 'SUCCESS', p_dba_user);
     EXCEPTION
         WHEN OTHERS THEN
@@ -188,7 +210,7 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
         v_oracle_user VARCHAR2(128);
     BEGIN
         v_oracle_user := get_oracle_user(p_username);
-        EXECUTE IMMEDIATE 'ALTER USER ' || DBMS_ASSERT.ENQUOTE_NAME(v_oracle_user, FALSE) || ' ACCOUNT UNLOCK CONTAINER = ALL';
+        EXECUTE IMMEDIATE 'ALTER USER ' || v_oracle_user || ' ACCOUNT UNLOCK CONTAINER = ALL';
         log_audit('UNLOCK_ACCOUNT', v_oracle_user, 'Compte déverrouillé dans toute la CDB', 'SUCCESS', p_dba_user);
     EXCEPTION
         WHEN OTHERS THEN
@@ -196,27 +218,5 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
             RAISE;
     END unlock_account;
 
-    PROCEDURE log_audit (
-        p_action_type    IN VARCHAR2,
-        p_target_user    IN VARCHAR2,
-        p_details        IN VARCHAR2,
-        p_status         IN VARCHAR2,
-        p_dba_user       IN VARCHAR2,
-        p_client_ip      IN VARCHAR2 DEFAULT NULL,
-        p_correlation_id IN VARCHAR2 DEFAULT NULL
-    ) IS
-        PRAGMA AUTONOMOUS_TRANSACTION;
-    BEGIN
-        INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT
-            (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS, CLIENT_IP, CORRELATION_ID)
-        VALUES
-            (SYSTIMESTAMP, p_dba_user, p_action_type, p_target_user, p_details, p_status, p_client_ip, p_correlation_id);
-        COMMIT;
-    EXCEPTION
-        WHEN OTHERS THEN
-            ROLLBACK;
-    END log_audit;
-
 END PKG_ZIRIOAM_COMMON_OPS;
 /
-

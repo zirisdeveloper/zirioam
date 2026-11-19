@@ -72,6 +72,12 @@ class OracleInstallerService
                 if ($stepCallback) $stepCallback($stepNum, $totalSteps, $progressPercent, $scriptMeta['name'], 'SUCCESS', null);
             } catch (\Throwable $e) {
                 $err = "Erreur Oracle lors de l'étape {$stepNum} : " . $e->getMessage();
+                if (strpos($e->getMessage(), 'ORA-24344') !== false) {
+                    $details = $this->fetchCompilationErrors();
+                    if (!empty($details)) {
+                        $err .= " [Détails: " . implode(' | ', $details) . "]";
+                    }
+                }
                 $results[] = ['step' => $stepNum, 'name' => $scriptMeta['name'], 'status' => 'FAILED', 'error' => $err];
                 if ($stepCallback) $stepCallback($stepNum, $totalSteps, $progressPercent, $scriptMeta['name'], 'FAILED', $err);
                 break;
@@ -112,6 +118,12 @@ class OracleInstallerService
                 if ($stepCallback) $stepCallback($stepNum, $totalSteps, $progressPercent, $scriptMeta['name'], 'SUCCESS', null);
             } catch (\Throwable $e) {
                 $err = "Erreur Oracle lors de l'étape PDB {$stepNum} : " . $e->getMessage();
+                if (strpos($e->getMessage(), 'ORA-24344') !== false) {
+                    $details = $this->fetchCompilationErrors();
+                    if (!empty($details)) {
+                        $err .= " [Détails: " . implode(' | ', $details) . "]";
+                    }
+                }
                 $results[] = ['step' => $stepNum, 'name' => $scriptMeta['name'], 'status' => 'FAILED', 'error' => $err];
                 if ($stepCallback) $stepCallback($stepNum, $totalSteps, $progressPercent, $scriptMeta['name'], 'FAILED', $err);
                 break;
@@ -119,6 +131,34 @@ class OracleInstallerService
         }
 
         return $results;
+    }
+
+    /**
+     * Récupère les erreurs de compilation PL/SQL depuis ALL_ERRORS
+     * @return array<string>
+     */
+    private function fetchCompilationErrors(): array
+    {
+        $errors = [];
+        try {
+            $sql = "SELECT OWNER, NAME, TYPE, LINE, POSITION, TEXT 
+                    FROM ALL_ERRORS 
+                    WHERE OWNER IN ('C##ZIRIOAM_ADMIN', 'ZIRIOAM_OWNER') 
+                    ORDER BY OWNER, NAME, TYPE, SEQUENCE";
+            $rows = $this->db->query($sql);
+            foreach ($rows as $r) {
+                $owner = $r['OWNER'] ?? '';
+                $name  = $r['NAME'] ?? '';
+                $type  = $r['TYPE'] ?? '';
+                $line  = $r['LINE'] ?? '';
+                $pos   = $r['POSITION'] ?? '';
+                $text  = trim($r['TEXT'] ?? '');
+                $errors[] = "{$owner}.{$name} ({$type} L:{$line} P:{$pos}) : {$text}";
+            }
+        } catch (\Throwable $e) {
+            // Tolérance si ALL_ERRORS n'est pas lisible
+        }
+        return $errors;
     }
 
     /**

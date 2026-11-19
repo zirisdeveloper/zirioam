@@ -96,7 +96,7 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
         -- Création physique du rôle dans la PDB
         SELECT COUNT(*) INTO v_role_count FROM DBA_ROLES WHERE ROLE = v_role_name;
         IF v_role_count = 0 THEN
-            EXECUTE IMMEDIATE 'CREATE ROLE ' || DBMS_ASSERT.ENQUOTE_NAME(v_role_name, FALSE);
+            EXECUTE IMMEDIATE 'CREATE ROLE ' || v_role_name;
         END IF;
 
         -- Enregistrement dans le catalogue ZIRIOAM_ACCESS_ROLES
@@ -126,8 +126,8 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
     BEGIN
         v_user := UPPER(TRIM(p_username));
         -- Droit de connexion STRICTEMENT LOCAL à la PDB courante
-        EXECUTE IMMEDIATE 'GRANT CREATE SESSION TO ' || DBMS_ASSERT.ENQUOTE_NAME(v_user, FALSE);
-        EXECUTE IMMEDIATE 'GRANT ZIRIOAM_DEV_BASE_ROLE TO ' || DBMS_ASSERT.ENQUOTE_NAME(v_user, FALSE);
+        EXECUTE IMMEDIATE 'GRANT CREATE SESSION TO ' || v_user;
+        EXECUTE IMMEDIATE 'GRANT ZIRIOAM_DEV_BASE_ROLE TO ' || v_user;
         log_audit('GRANT_SESSION', v_user, NULL, 'CREATE SESSION', 'SUCCESS', 'Accès session accordé sur PDB', p_granted_by);
     EXCEPTION
         WHEN OTHERS THEN
@@ -142,8 +142,8 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
         v_user VARCHAR2(128);
     BEGIN
         v_user := UPPER(TRIM(p_username));
-        EXECUTE IMMEDIATE 'REVOKE CREATE SESSION FROM ' || DBMS_ASSERT.ENQUOTE_NAME(v_user, FALSE);
-        EXECUTE IMMEDIATE 'REVOKE ZIRIOAM_DEV_BASE_ROLE FROM ' || DBMS_ASSERT.ENQUOTE_NAME(v_user, FALSE);
+        EXECUTE IMMEDIATE 'REVOKE CREATE SESSION FROM ' || v_user;
+        EXECUTE IMMEDIATE 'REVOKE ZIRIOAM_DEV_BASE_ROLE FROM ' || v_user;
         log_audit('REVOKE_SESSION', v_user, NULL, 'CREATE SESSION', 'SUCCESS', 'Accès session révoqué sur PDB', p_revoked_by);
     EXCEPTION
         WHEN OTHERS THEN
@@ -162,7 +162,7 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
         v_user := UPPER(TRIM(p_username));
         v_role := UPPER(TRIM(p_role_name));
 
-        EXECUTE IMMEDIATE 'GRANT ' || DBMS_ASSERT.ENQUOTE_NAME(v_role, FALSE) || ' TO ' || DBMS_ASSERT.ENQUOTE_NAME(v_user, FALSE);
+        EXECUTE IMMEDIATE 'GRANT ' || v_role || ' TO ' || v_user;
         log_audit('GRANT_ROLE', v_user, NULL, v_role, 'SUCCESS', 'Rôle accordé', p_granted_by);
     EXCEPTION
         WHEN OTHERS THEN
@@ -181,7 +181,7 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
         v_user := UPPER(TRIM(p_username));
         v_role := UPPER(TRIM(p_role_name));
 
-        EXECUTE IMMEDIATE 'REVOKE ' || DBMS_ASSERT.ENQUOTE_NAME(v_role, FALSE) || ' FROM ' || DBMS_ASSERT.ENQUOTE_NAME(v_user, FALSE);
+        EXECUTE IMMEDIATE 'REVOKE ' || v_role || ' FROM ' || v_user;
         log_audit('REVOKE_ROLE', v_user, NULL, v_role, 'SUCCESS', 'Rôle révoqué', p_revoked_by);
     EXCEPTION
         WHEN OTHERS THEN
