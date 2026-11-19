@@ -27,15 +27,20 @@ BEGIN
 
     IF v_user_count = 0 THEN
         -- Création de l'utilisateur commun avec CONTAINER = ALL
-        -- Le mot de passe par défaut généré est verrouillé ou initialisé
-        EXECUTE IMMEDIATE 'CREATE USER C##ZIRIOAM_ADMIN IDENTIFIED BY "ZiriOam_Admin2026#Setup" ' ||
-                          'DEFAULT TABLESPACE ' || v_default_ts || ' ' ||
-                          'TEMPORARY TABLESPACE ' || v_temp_ts || ' ' ||
-                          'QUOTA UNLIMITED ON ' || v_default_ts || ' ' ||
-                          'CONTAINER = ALL';
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE USER C##ZIRIOAM_ADMIN IDENTIFIED BY "ZiriOam_Admin2026#Setup" ' ||
+                              'DEFAULT TABLESPACE ' || v_default_ts || ' ' ||
+                              'TEMPORARY TABLESPACE ' || v_temp_ts || ' ' ||
+                              'QUOTA UNLIMITED ON ' || v_default_ts || ' ' ||
+                              'CONTAINER = ALL';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
     ELSE
         -- S'il existe déjà, s'assurer des quotas
-        EXECUTE IMMEDIATE 'ALTER USER C##ZIRIOAM_ADMIN QUOTA UNLIMITED ON ' || v_default_ts || ' CONTAINER = ALL';
+        BEGIN
+            EXECUTE IMMEDIATE 'ALTER USER C##ZIRIOAM_ADMIN QUOTA UNLIMITED ON ' || v_default_ts || ' CONTAINER = ALL';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
     END IF;
 
     -- 3. Privilèges système nécessaires pour l'administration commune
@@ -44,9 +49,22 @@ BEGIN
     EXECUTE IMMEDIATE 'GRANT CREATE VIEW TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
     EXECUTE IMMEDIATE 'GRANT CREATE SEQUENCE TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
     EXECUTE IMMEDIATE 'GRANT CREATE PROCEDURE TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
-    EXECUTE IMMEDIATE 'GRANT CREATE USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
-    EXECUTE IMMEDIATE 'GRANT ALTER USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
-    EXECUTE IMMEDIATE 'GRANT DROP USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
+
+    -- Droits de gestion d'utilisateurs communs :
+    -- Sous Oracle Database Vault, SYS/SYSTEM est bloqué par le Realm (ORA-47410).
+    -- Ces droits sont accordés par le compte habilité C##VOLTMANAGER.
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT CREATE USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT ALTER USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT DROP USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
     
     -- Droits de lecture du dictionnaire pour la découverte
     EXECUTE IMMEDIATE 'GRANT SELECT_CATALOG_ROLE TO C##ZIRIOAM_ADMIN CONTAINER = ALL';

@@ -169,13 +169,18 @@ class InstallerController extends Controller
         $target = (string)$request->post('target_container', 'CDB$ROOT');
         $replaceObjects = $request->post('replace_objects') === '1';
         $reapplyGrants = $request->post('reapply_grants') === '1';
+        $reapplyVault = $request->post('reapply_vault') === '1';
 
-        $vaultUser = trim((string)$request->post('vault_user', ''));
-        $vaultPassword = (string)$request->post('vault_password', '');
+        $vaultUser = null;
+        $vaultPassword = null;
+        if ($reapplyVault) {
+            $vaultUser = trim((string)$request->post('vault_user', ''));
+            $vaultPassword = (string)$request->post('vault_password', '');
 
-        if (empty($vaultUser)) {
-            $vaultUser = (string)$this->session->get('vault_user', '');
-            $vaultPassword = (string)$this->session->get('vault_password', '');
+            if (empty($vaultUser)) {
+                $vaultUser = (string)$this->session->get('vault_user', '');
+                $vaultPassword = (string)$this->session->get('vault_password', '');
+            }
         }
 
         $installerService = new OracleInstallerService($db);
