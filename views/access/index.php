@@ -1,17 +1,49 @@
 <div class="py-2">
     <!-- En-tête -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
         <div>
             <h2 class="h3 fw-bold text-dark mb-1">Matrice d'Accès : Séparation Stricte DDL / DML</h2>
-            <p class="text-muted mb-0">
-                PDB Active : <strong class="text-primary font-monospace"><?= e($activePdb ?: 'Aucune PDB sélectionnée') ?></strong> &bull;
-                Les privilèges DDL (création d'objets) et DML (données) sont hermétiquement indépendants.
-            </p>
+            <div class="d-flex align-items-center gap-2 mt-1">
+                <span class="text-muted small">PDB Active :</span>
+                <form action="<?= zirioam_url('/access') ?>" method="GET" class="d-inline-flex align-items-center">
+                    <select name="pdb" class="form-select form-select-sm font-monospace fw-bold text-primary" onchange="this.form.submit()">
+                        <?php foreach ($pdbs as $p): ?>
+                            <option value="<?= e($p['NAME']) ?>" <?= ($p['NAME'] === $activePdb) ? 'selected' : '' ?>>
+                                <?= e($p['NAME']) ?> (<?= e($p['OPEN_MODE']) ?>)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </form>
+            </div>
         </div>
-        <button type="button" class="btn btn-primary fw-semibold" data-bs-toggle="modal" data-bs-target="#grantAccessModal">
-            + Attribuer des Droits Développeur
-        </button>
+        <div class="d-flex gap-2">
+            <a href="<?= zirioam_url('/databases') ?>" class="btn btn-outline-secondary">
+                🌐 Liste des PDBs
+            </a>
+            <button type="button" class="btn btn-primary fw-semibold" data-bs-toggle="modal" data-bs-target="#grantAccessModal">
+                + Attribuer des Droits Développeur
+            </button>
+        </div>
     </div>
+
+    <?php if (!empty($activePdb) && empty($isPdbInstalled)): ?>
+        <div class="alert alert-warning border-warning shadow-sm mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div>
+                <h6 class="fw-bold text-dark mb-1">⚠️ Composants ZIRIOAM non déployés sur <?= e($activePdb) ?></h6>
+                <span class="small text-muted">
+                    Le schéma propriétaire <code>ZIRIOAM_OWNER</code> et les packages PDB ne sont pas encore installés sur cette PDB.
+                </span>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="<?= zirioam_url('/installer/maintenance') ?>" class="btn btn-sm btn-warning fw-bold">
+                    🛠️ Déployer via Maintenance &rarr;
+                </a>
+                <a href="<?= zirioam_url('/installer/wizard?target=' . urlencode($activePdb)) ?>" class="btn btn-sm btn-outline-dark">
+                    Assistant d'Installation
+                </a>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <!-- Tableau de la Matrice d'Accès -->
     <div class="card border-0 shadow-sm">

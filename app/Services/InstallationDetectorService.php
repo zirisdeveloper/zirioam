@@ -27,9 +27,15 @@ class InstallationDetectorService
      */
     public function detectStatus(string $targetContainer = 'CDB$ROOT'): array
     {
-        $currentCon = $this->db->getCurrentContainer();
-        $isCdb = ($targetContainer === 'CDB$ROOT' || $currentCon === 'CDB$ROOT');
-        $owner = $isCdb ? 'C##ZIRIOAM_ADMIN' : 'ZIRIOAM_OWNER';
+        $prevCon = $this->db->getCurrentContainer();
+        if (!empty($targetContainer) && $prevCon !== $targetContainer) {
+            $this->db->switchContainer($targetContainer);
+        }
+
+        try {
+            $currentCon = $this->db->getCurrentContainer();
+            $isCdb = ($currentCon === 'CDB$ROOT');
+            $owner = $isCdb ? 'C##ZIRIOAM_ADMIN' : 'ZIRIOAM_OWNER';
 
         // 1. Vérification de la présence de la table de contrôle ZIRIOAM_INSTALLATION
         $tableCheckSql = "SELECT COUNT(*) AS CNT FROM ALL_TABLES WHERE OWNER = :owner AND TABLE_NAME = 'ZIRIOAM_INSTALLATION'";
@@ -172,6 +178,11 @@ class InstallationDetectorService
                 'packages_count' => count($requiredPackages),
             ],
         ];
+        } finally {
+            if (!empty($prevCon) && $this->db->getCurrentContainer() !== $prevCon) {
+                $this->db->switchContainer($prevCon);
+            }
+        }
     }
 }
 

@@ -33,7 +33,19 @@ class DeveloperImportService
         }
 
         // Récupération de tous les identifiants déjà présents dans la base cible
-        $existingRows = $this->db->query("SELECT USERNAME FROM C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS");
+        $prevCon = $this->db->getCurrentContainer();
+        if ($prevCon !== 'CDB$ROOT') {
+            $this->db->switchContainer('CDB$ROOT');
+        }
+
+        try {
+            $existingRows = $this->db->query("SELECT USERNAME FROM C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS");
+        } finally {
+            if ($prevCon !== 'CDB$ROOT') {
+                $this->db->switchContainer($prevCon);
+            }
+        }
+
         $existingMap = [];
         foreach ($existingRows as $row) {
             $existingMap[strtoupper(trim($row['USERNAME']))] = true;
@@ -102,49 +114,60 @@ class DeveloperImportService
      */
     public function executeAddOnlyImport(array $newDevelopers, string $dbaUser, ?string $clientIp = null): array
     {
-        $importedCount = 0;
-        $errors = [];
+        $prevCon = $this->db->getCurrentContainer();
+        if ($prevCon !== 'CDB$ROOT') {
+            $this->db->switchContainer('CDB$ROOT');
+        }
 
-        $insertSql = "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS 
-                      (USERNAME, ORACLE_USER, FULL_NAME, EMAIL, STATUS, CREATED_BY, CREATED_AT, UPDATED_AT)
-                      VALUES 
-                      (:user, :ora, :name, :email, :status, :dba, SYSTIMESTAMP, SYSTIMESTAMP)";
+        try {
+            $importedCount = 0;
+            $errors = [];
 
-        foreach ($newDevelopers as $dev) {
+            $insertSql = "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS 
+                          (USERNAME, ORACLE_USER, FULL_NAME, EMAIL, STATUS, CREATED_BY, CREATED_AT, UPDATED_AT)
+                          VALUES 
+                          (:user, :ora, :name, :email, :status, :dba, SYSTIMESTAMP, SYSTIMESTAMP)";
+
+            foreach ($newDevelopers as $dev) {
+                try {
+                    $this->db->execute($insertSql, [
+                        'user' => $dev['username'],
+                        'ora' => $dev['oracle_user'],
+                        'name' => $dev['full_name'],
+                        'email' => $dev['email'],
+                        'status' => $dev['status'],
+                        'dba' => $dbaUser,
+                    ]);
+                    $importedCount++;
+                } catch (\Throwable $e) {
+                    // En cas de contrainte unique concurrente, ignorer conformément à ADD ONLY
+                    $errors[] = "Erreur sur {$dev['username']} : " . $e->getMessage();
+                }
+            }
+
+            // Audit de l'opération d'import
             try {
-                $this->db->execute($insertSql, [
-                    'user' => $dev['username'],
-                    'ora' => $dev['oracle_user'],
-                    'name' => $dev['full_name'],
-                    'email' => $dev['email'],
-                    'status' => $dev['status'],
+                $auditSql = "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT 
+                             (EVENT_TIME, DBA_USER, ACTION_TYPE, DETAILS, STATUS, CLIENT_IP)
+                             VALUES (SYSTIMESTAMP, :dba, 'JSON_IMPORT_ADD_ONLY', :details, 'SUCCESS', :ip)";
+                $this->db->execute($auditSql, [
                     'dba' => $dbaUser,
+                    'details' => "Importation JSON terminée. Nouveaux ajoutés: {$importedCount}. Erreurs: " . count($errors),
+                    'ip' => $clientIp,
                 ]);
-                $importedCount++;
             } catch (\Throwable $e) {
-                // En cas de contrainte unique concurrente, ignorer conformément à ADD ONLY
-                $errors[] = "Erreur sur {$dev['username']} : " . $e->getMessage();
+                // Ignorer
+            }
+
+            return [
+                'imported_count' => $importedCount,
+                'errors' => $errors,
+            ];
+        } finally {
+            if ($prevCon !== 'CDB$ROOT') {
+                $this->db->switchContainer($prevCon);
             }
         }
-
-        // Audit de l'opération d'import
-        try {
-            $auditSql = "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT 
-                         (EVENT_TIME, DBA_USER, ACTION_TYPE, DETAILS, STATUS, CLIENT_IP)
-                         VALUES (SYSTIMESTAMP, :dba, 'JSON_IMPORT_ADD_ONLY', :details, 'SUCCESS', :ip)";
-            $this->db->execute($auditSql, [
-                'dba' => $dbaUser,
-                'details' => "Importation JSON terminée. Nouveaux ajoutés: {$importedCount}. Erreurs: " . count($errors),
-                'ip' => $clientIp,
-            ]);
-        } catch (\Throwable $e) {
-            // Ignorer
-        }
-
-        return [
-            'imported_count' => $importedCount,
-            'errors' => $errors,
-        ];
     }
 }
 

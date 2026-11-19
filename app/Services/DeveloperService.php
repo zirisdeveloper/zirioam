@@ -17,31 +17,53 @@ class DeveloperService
     }
 
     /**
+     * Exécute une opération dans le conteneur CDB$ROOT en restaurant le conteneur précédent
+     * Garantit que les tables du référentiel commun (C##ZIRIOAM_ADMIN.*) sont toujours accessibles
+     * même si la session était positionnée dans une PDB.
+     */
+    private function executeInCdbRoot(callable $callback)
+    {
+        $prevCon = $this->db->getCurrentContainer();
+        if ($prevCon !== 'CDB$ROOT') {
+            $this->db->switchContainer('CDB$ROOT');
+        }
+        try {
+            return $callback();
+        } finally {
+            if ($prevCon !== 'CDB$ROOT') {
+                $this->db->switchContainer($prevCon);
+            }
+        }
+    }
+
+    /**
      * Récupère la liste de tous les développeurs avec filtres de recherche
      */
     public function getAllDevelopers(string $search = '', string $status = ''): array
     {
-        $sql = "SELECT d.DEVELOPER_ID, d.USERNAME, d.ORACLE_USER, d.FULL_NAME, d.EMAIL, d.STATUS, 
-                       TO_CHAR(d.CREATED_AT, 'YYYY-MM-DD HH24:MI:SS') AS CREATED_AT,
-                       (SELECT COUNT(*) FROM CDB_USERS u WHERE u.USERNAME = d.ORACLE_USER AND u.COMMON = 'YES') AS ORACLE_ACCOUNT_EXISTS,
-                       (SELECT ACCOUNT_STATUS FROM CDB_USERS u WHERE u.USERNAME = d.ORACLE_USER AND u.COMMON = 'YES' AND ROWNUM = 1) AS ORACLE_ACCOUNT_STATUS
-                FROM C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS d
-                WHERE 1=1";
+        return $this->executeInCdbRoot(function() use ($search, $status) {
+            $sql = "SELECT d.DEVELOPER_ID, d.USERNAME, d.ORACLE_USER, d.FULL_NAME, d.EMAIL, d.STATUS, 
+                           TO_CHAR(d.CREATED_AT, 'YYYY-MM-DD HH24:MI:SS') AS CREATED_AT,
+                           (SELECT COUNT(*) FROM CDB_USERS u WHERE u.USERNAME = d.ORACLE_USER AND u.COMMON = 'YES') AS ORACLE_ACCOUNT_EXISTS,
+                           (SELECT ACCOUNT_STATUS FROM CDB_USERS u WHERE u.USERNAME = d.ORACLE_USER AND u.COMMON = 'YES' AND ROWNUM = 1) AS ORACLE_ACCOUNT_STATUS
+                    FROM C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS d
+                    WHERE 1=1";
 
-        $binds = [];
-        if (!empty($search)) {
-            $sql .= " AND (UPPER(d.USERNAME) LIKE :search OR UPPER(d.FULL_NAME) LIKE :search OR UPPER(d.EMAIL) LIKE :search)";
-            $binds['search'] = '%' . strtoupper(trim($search)) . '%';
-        }
+            $binds = [];
+            if (!empty($search)) {
+                $sql .= " AND (UPPER(d.USERNAME) LIKE :search OR UPPER(d.FULL_NAME) LIKE :search OR UPPER(d.EMAIL) LIKE :search)";
+                $binds['search'] = '%' . strtoupper(trim($search)) . '%';
+            }
 
-        if (!empty($status)) {
-            $sql .= " AND d.STATUS = :status";
-            $binds['status'] = strtoupper(trim($status));
-        }
+            if (!empty($status)) {
+                $sql .= " AND d.STATUS = :status";
+                $binds['status'] = strtoupper(trim($status));
+            }
 
-        $sql .= " ORDER BY d.USERNAME ASC";
+            $sql .= " ORDER BY d.USERNAME ASC";
 
-        return $this->db->query($sql, $binds);
+            return $this->db->query($sql, $binds);
+        });
     }
 
     /**
@@ -49,16 +71,18 @@ class DeveloperService
      */
     public function getDeveloperById(int $id): ?array
     {
-        $sql = "SELECT d.DEVELOPER_ID, d.USERNAME, d.ORACLE_USER, d.FULL_NAME, d.EMAIL, d.STATUS,
-                       TO_CHAR(d.CREATED_AT, 'YYYY-MM-DD HH24:MI:SS') AS CREATED_AT,
-                       TO_CHAR(d.UPDATED_AT, 'YYYY-MM-DD HH24:MI:SS') AS UPDATED_AT,
-                       d.CREATED_BY,
-                       (SELECT COUNT(*) FROM CDB_USERS u WHERE u.USERNAME = d.ORACLE_USER AND u.COMMON = 'YES') AS ORACLE_ACCOUNT_EXISTS,
-                       (SELECT ACCOUNT_STATUS FROM CDB_USERS u WHERE u.USERNAME = d.ORACLE_USER AND u.COMMON = 'YES' AND ROWNUM = 1) AS ORACLE_ACCOUNT_STATUS
-                FROM C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS d
-                WHERE d.DEVELOPER_ID = :id";
+        return $this->executeInCdbRoot(function() use ($id) {
+            $sql = "SELECT d.DEVELOPER_ID, d.USERNAME, d.ORACLE_USER, d.FULL_NAME, d.EMAIL, d.STATUS,
+                           TO_CHAR(d.CREATED_AT, 'YYYY-MM-DD HH24:MI:SS') AS CREATED_AT,
+                           TO_CHAR(d.UPDATED_AT, 'YYYY-MM-DD HH24:MI:SS') AS UPDATED_AT,
+                           d.CREATED_BY,
+                           (SELECT COUNT(*) FROM CDB_USERS u WHERE u.USERNAME = d.ORACLE_USER AND u.COMMON = 'YES') AS ORACLE_ACCOUNT_EXISTS,
+                           (SELECT ACCOUNT_STATUS FROM CDB_USERS u WHERE u.USERNAME = d.ORACLE_USER AND u.COMMON = 'YES' AND ROWNUM = 1) AS ORACLE_ACCOUNT_STATUS
+                    FROM C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS d
+                    WHERE d.DEVELOPER_ID = :id";
 
-        return $this->db->queryOne($sql, ['id' => $id]);
+            return $this->db->queryOne($sql, ['id' => $id]);
+        });
     }
 
     /**
@@ -71,11 +95,13 @@ class DeveloperService
             $norm = substr($norm, 3);
         }
 
-        $sql = "SELECT DEVELOPER_ID, USERNAME, ORACLE_USER, FULL_NAME, EMAIL, STATUS
-                FROM C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS
-                WHERE USERNAME = :username";
+        return $this->executeInCdbRoot(function() use ($norm) {
+            $sql = "SELECT DEVELOPER_ID, USERNAME, ORACLE_USER, FULL_NAME, EMAIL, STATUS
+                    FROM C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS
+                    WHERE USERNAME = :username";
 
-        return $this->db->queryOne($sql, ['username' => $norm]);
+            return $this->db->queryOne($sql, ['username' => $norm]);
+        });
     }
 
     /**
@@ -102,22 +128,24 @@ class DeveloperService
 
         $oracleUser = 'C##' . $username;
 
-        $sql = "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS 
-                (USERNAME, ORACLE_USER, FULL_NAME, EMAIL, STATUS, CREATED_BY, CREATED_AT, UPDATED_AT)
-                VALUES 
-                (:username, :oracle_user, :full_name, :email, :status, :dba_user, SYSTIMESTAMP, SYSTIMESTAMP)";
+        return $this->executeInCdbRoot(function() use ($username, $oracleUser, $fullName, $email, $status, $dbaUser) {
+            $sql = "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS 
+                    (USERNAME, ORACLE_USER, FULL_NAME, EMAIL, STATUS, CREATED_BY, CREATED_AT, UPDATED_AT)
+                    VALUES 
+                    (:username, :oracle_user, :full_name, :email, :status, :dba_user, SYSTIMESTAMP, SYSTIMESTAMP)";
 
-        $this->db->execute($sql, [
-            'username' => $username,
-            'oracle_user' => $oracleUser,
-            'full_name' => $fullName,
-            'email' => $email,
-            'status' => $status,
-            'dba_user' => $dbaUser,
-        ]);
+            $this->db->execute($sql, [
+                'username' => $username,
+                'oracle_user' => $oracleUser,
+                'full_name' => $fullName,
+                'email' => $email,
+                'status' => $status,
+                'dba_user' => $dbaUser,
+            ]);
 
-        $created = $this->getDeveloperByUsername($username);
-        return (int)($created['DEVELOPER_ID'] ?? 0);
+            $created = $this->getDeveloperByUsername($username);
+            return (int)($created['DEVELOPER_ID'] ?? 0);
+        });
     }
 
     /**
@@ -133,16 +161,18 @@ class DeveloperService
             throw new \InvalidArgumentException("Nom complet ou adresse email invalide.");
         }
 
-        $sql = "UPDATE C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS 
-                SET FULL_NAME = :full_name, EMAIL = :email, STATUS = :status, UPDATED_AT = SYSTIMESTAMP
-                WHERE DEVELOPER_ID = :id";
+        return $this->executeInCdbRoot(function() use ($id, $fullName, $email, $status) {
+            $sql = "UPDATE C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS 
+                    SET FULL_NAME = :full_name, EMAIL = :email, STATUS = :status, UPDATED_AT = SYSTIMESTAMP
+                    WHERE DEVELOPER_ID = :id";
 
-        return $this->db->execute($sql, [
-            'full_name' => $fullName,
-            'email' => $email,
-            'status' => $status,
-            'id' => $id,
-        ]);
+            return $this->db->execute($sql, [
+                'full_name' => $fullName,
+                'email' => $email,
+                'status' => $status,
+                'id' => $id,
+            ]);
+        });
     }
 
     /**
@@ -150,12 +180,14 @@ class DeveloperService
      */
     public function toggleStatus(int $id, string $newStatus, string $dbaUser): bool
     {
-        $status = in_array(strtoupper($newStatus), ['ACTIVE', 'INACTIVE']) ? strtoupper($newStatus) : 'ACTIVE';
-        $sql = "UPDATE C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS 
-                SET STATUS = :status, UPDATED_AT = SYSTIMESTAMP 
-                WHERE DEVELOPER_ID = :id";
+        return $this->executeInCdbRoot(function() use ($id, $newStatus) {
+            $status = in_array(strtoupper($newStatus), ['ACTIVE', 'INACTIVE']) ? strtoupper($newStatus) : 'ACTIVE';
+            $sql = "UPDATE C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS 
+                    SET STATUS = :status, UPDATED_AT = SYSTIMESTAMP 
+                    WHERE DEVELOPER_ID = :id";
 
-        return $this->db->execute($sql, ['status' => $status, 'id' => $id]);
+            return $this->db->execute($sql, ['status' => $status, 'id' => $id]);
+        });
     }
 
     /**
@@ -348,17 +380,19 @@ class DeveloperService
         $norm = strtoupper(trim($username));
         $oracleUser = str_starts_with($norm, 'C##') ? $norm : 'C##' . $norm;
 
-        $sql = "SELECT AUDIT_ID, TO_CHAR(EVENT_TIME, 'YYYY-MM-DD HH24:MI:SS') AS EVENT_TIME, 
-                       DBA_USER, ACTION_TYPE, DETAILS, STATUS
-                FROM C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT
-                WHERE TARGET_USER IN (:norm, :ora)
-                ORDER BY EVENT_TIME DESC";
+        return $this->executeInCdbRoot(function() use ($norm, $oracleUser) {
+            $sql = "SELECT AUDIT_ID, TO_CHAR(EVENT_TIME, 'YYYY-MM-DD HH24:MI:SS') AS EVENT_TIME, 
+                           DBA_USER, ACTION_TYPE, DETAILS, STATUS
+                    FROM C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT
+                    WHERE TARGET_USER IN (:norm, :ora)
+                    ORDER BY EVENT_TIME DESC";
 
-        try {
-            return $this->db->query($sql, ['norm' => $norm, 'ora' => $oracleUser]);
-        } catch (\Throwable $e) {
-            return [];
-        }
+            try {
+                return $this->db->query($sql, ['norm' => $norm, 'ora' => $oracleUser]);
+            } catch (\Throwable $e) {
+                return [];
+            }
+        });
     }
 }
 

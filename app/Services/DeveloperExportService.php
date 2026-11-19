@@ -21,30 +21,41 @@ class DeveloperExportService
      */
     public function generateExport(string $serverName): array
     {
-        $sql = "SELECT USERNAME, FULL_NAME, EMAIL, STATUS 
-                FROM C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS 
-                ORDER BY USERNAME ASC";
-        
-        $rows = $this->db->query($sql);
-
-        $developers = [];
-        foreach ($rows as $row) {
-            $developers[] = [
-                'username' => $row['USERNAME'],
-                'full_name' => $row['FULL_NAME'],
-                'email' => $row['EMAIL'],
-                'status' => $row['STATUS'] ?? 'ACTIVE',
-            ];
+        $prevCon = $this->db->getCurrentContainer();
+        if ($prevCon !== 'CDB$ROOT') {
+            $this->db->switchContainer('CDB$ROOT');
         }
 
-        return [
-            'format' => 'ZIRIOAM_DEVELOPERS',
-            'format_version' => '1.0',
-            'export_date' => date('c'),
-            'source_server' => $serverName,
-            'total_count' => count($developers),
-            'developers' => $developers,
-        ];
+        try {
+            $sql = "SELECT USERNAME, FULL_NAME, EMAIL, STATUS 
+                    FROM C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS 
+                    ORDER BY USERNAME ASC";
+            
+            $rows = $this->db->query($sql);
+
+            $developers = [];
+            foreach ($rows as $row) {
+                $developers[] = [
+                    'username' => $row['USERNAME'],
+                    'full_name' => $row['FULL_NAME'],
+                    'email' => $row['EMAIL'],
+                    'status' => $row['STATUS'] ?? 'ACTIVE',
+                ];
+            }
+
+            return [
+                'format' => 'ZIRIOAM_DEVELOPERS',
+                'format_version' => '1.0',
+                'export_date' => date('c'),
+                'source_server' => $serverName,
+                'total_count' => count($developers),
+                'developers' => $developers,
+            ];
+        } finally {
+            if ($prevCon !== 'CDB$ROOT') {
+                $this->db->switchContainer($prevCon);
+            }
+        }
     }
 }
 

@@ -26,7 +26,14 @@ class RoleController extends Controller
         $db = $this->connectionService->getActiveConnection();
         if (!$db) return $this->redirect('/servers');
 
-        $activePdb = $this->session->get('current_pdb');
+        $paramPdb = trim((string)$request->query('pdb', ''));
+        if (!empty($paramPdb) && zirioam_is_valid_oracle_identifier($paramPdb)) {
+            $activePdb = strtoupper($paramPdb);
+            $this->session->set('current_pdb', $activePdb);
+        } else {
+            $activePdb = $this->session->get('current_pdb');
+        }
+
         $discovery = new OracleDiscoveryService($db);
         $pdbs = $discovery->discoverPdbs();
 

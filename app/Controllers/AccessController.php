@@ -27,9 +27,17 @@ class AccessController extends Controller
         $db = $this->connectionService->getActiveConnection();
         if (!$db) return $this->redirect('/servers');
 
-        $activePdb = $this->session->get('current_pdb');
         $discovery = new OracleDiscoveryService($db);
         $pdbs = $discovery->discoverPdbs();
+
+        // Sélection PDB explicite via paramètre ou session
+        $paramPdb = trim((string)$request->query('pdb', ''));
+        if (!empty($paramPdb) && zirioam_is_valid_oracle_identifier($paramPdb)) {
+            $activePdb = strtoupper($paramPdb);
+            $this->session->set('current_pdb', $activePdb);
+        } else {
+            $activePdb = $this->session->get('current_pdb');
+        }
 
         if (empty($activePdb) && !empty($pdbs)) {
             foreach ($pdbs as $p) {
@@ -45,8 +53,18 @@ class AccessController extends Controller
         $roles = [];
         $schemas = [];
         $developers = [];
+        $isPdbInstalled = true;
+
+        // Récupération de la liste des développeurs actifs (toujours depuis CDB$ROOT)
+        $devService = new DeveloperService($db);
+        $developers = $devService->getAllDevelopers('', 'ACTIVE');
 
         if (!empty($activePdb)) {
+            // Vérifier si les composants ZIRIOAM_OWNER sont installés sur cette PDB
+            $detector = new \App\Services\InstallationDetectorService($db);
+            $pdbCheck = $detector->detectStatus($activePdb);
+            $isPdbInstalled = ($pdbCheck['status'] === \App\Services\InstallationDetectorService::INSTALLED);
+
             $accessService = new AccessProvisioningService($db);
             $filterSchema = (string)$request->query('schema', '');
             $filterDev = (string)$request->query('developer', '');
@@ -54,9 +72,6 @@ class AccessController extends Controller
             $matrix = $accessService->getAccessMatrix($activePdb, $filterSchema, $filterDev);
             $roles = $accessService->getRoles($activePdb);
             $schemas = $discovery->discoverApplicationSchemas();
-
-            $devService = new DeveloperService($db);
-            $developers = $devService->getAllDevelopers('', 'ACTIVE');
         }
 
         return $this->render('access.index', [
@@ -66,6 +81,7 @@ class AccessController extends Controller
             'developers' => $developers,
             'activePdb' => $activePdb,
             'pdbs' => $pdbs,
+            'isPdbInstalled' => $isPdbInstalled,
         ]);
     }
 
