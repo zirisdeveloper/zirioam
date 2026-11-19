@@ -45,33 +45,50 @@ class PasswordResetService
             $this->db->switchContainer('CDB$ROOT');
         }
 
-        // Commande Oracle 19c : ALTER USER C##... IDENTIFIED BY "..." PASSWORD EXPIRE CONTAINER = ALL
-        $sql = "ALTER USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
-        $this->db->executeDdl($sql);
-
-        // Journalisation sans mot de passe
+        // Exécution en 2 modes selon spécification (Section 11) :
+        // Mode A : Package PL/SQL C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS (avec privilèges AUTHID DEFINER de C##ZIRIOAM_ADMIN)
+        // Mode B : Ordre SQL direct ALTER USER si le package n'est pas accessible
+        $executedViaPackage = false;
         try {
-            $logSql = "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_PWD_RESET_LOG 
-                       (USERNAME, ORACLE_USER, RESET_BY_DBA, CLIENT_IP, STATUS, RESET_AT)
-                       VALUES (:user, :ora, :dba, :ip, 'SUCCESS', SYSTIMESTAMP)";
-            $this->db->execute($logSql, [
-                'user' => $norm,
-                'ora' => $oracleUser,
+            $pkgSql = "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS.reset_password(:username, :pwd, :dba, :ip); END;";
+            $this->db->execute($pkgSql, [
+                'username' => $norm,
+                'pwd' => $tempPassword,
                 'dba' => $dbaUser,
                 'ip' => $clientIp,
             ]);
+            $executedViaPackage = true;
+        } catch (\Throwable $pkgErr) {
+            // Mode B : Fallback via commande DDL directe
+            $sql = "ALTER USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
+            $this->db->executeDdl($sql);
+        }
 
-            // Audit
-            $auditSql = "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT 
-                         (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS, CLIENT_IP)
-                         VALUES (SYSTIMESTAMP, :dba, 'PASSWORD_RESET', :target, 'Réinitialisation mot de passe temporaire (expiré)', 'SUCCESS', :ip)";
-            $this->db->execute($auditSql, [
-                'dba' => $dbaUser,
-                'target' => $oracleUser,
-                'ip' => $clientIp,
-            ]);
-        } catch (\Throwable $e) {
-            // Même si le log échoue, l'ordre DDL a été exécuté par Oracle
+        // Journalisation PHP complémentaire si l'opération a été exécutée via Mode B
+        if (!$executedViaPackage) {
+            try {
+                $logSql = "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_PWD_RESET_LOG 
+                           (USERNAME, ORACLE_USER, RESET_BY_DBA, CLIENT_IP, STATUS, RESET_AT)
+                           VALUES (:user, :ora, :dba, :ip, 'SUCCESS', SYSTIMESTAMP)";
+                $this->db->execute($logSql, [
+                    'user' => $norm,
+                    'ora' => $oracleUser,
+                    'dba' => $dbaUser,
+                    'ip' => $clientIp,
+                ]);
+
+                // Audit
+                $auditSql = "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT 
+                             (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS, CLIENT_IP)
+                             VALUES (SYSTIMESTAMP, :dba, 'PASSWORD_RESET', :target, 'Réinitialisation mot de passe temporaire (expiré)', 'SUCCESS', :ip)";
+                $this->db->execute($auditSql, [
+                    'dba' => $dbaUser,
+                    'target' => $oracleUser,
+                    'ip' => $clientIp,
+                ]);
+            } catch (\Throwable $e) {
+                // Même si le log échoue, l'ordre DDL a été exécuté par Oracle
+            }
         }
 
         return $tempPassword;

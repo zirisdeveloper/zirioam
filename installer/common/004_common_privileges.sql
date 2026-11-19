@@ -6,6 +6,16 @@
 -- =====================================================================
 
 BEGIN
+    -- Droits d'exécution sur le package d'orchestration commune
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT EXECUTE ON C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS TO DBA CONTAINER = ALL';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT EXECUTE ON C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS TO PUBLIC CONTAINER = ALL';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+
     -- Insertion ou mise à jour de l'état d'installation CDB
     MERGE INTO C##ZIRIOAM_ADMIN.ZIRIOAM_INSTALLATION dest
     USING (

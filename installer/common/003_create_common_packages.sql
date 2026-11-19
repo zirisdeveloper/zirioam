@@ -5,7 +5,7 @@
 -- Objet  : Package PL/SQL d'orchestration commune des identités
 -- =====================================================================
 
-CREATE OR REPLACE PACKAGE C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AUTHID CURRENT_USER AS
+CREATE OR REPLACE PACKAGE C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AUTHID DEFINER AS
 
     -- Création d'une identité développeur dans le référentiel ZIRIOAM
     PROCEDURE register_developer (

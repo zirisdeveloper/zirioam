@@ -182,21 +182,34 @@ class DeveloperService
             $tempPassword = zirioam_generate_secure_password(14);
         }
 
-        // Exécution de l'ordre DDL dans CDB$ROOT
+        // Exécution dans CDB$ROOT
         $currentCon = $this->db->getCurrentContainer();
         if ($currentCon !== 'CDB$ROOT') {
             $this->db->switchContainer('CDB$ROOT');
         }
 
-        $sql = "CREATE USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
-        $this->db->executeDdl($sql);
+        $executedViaPackage = false;
+        try {
+            $pkgSql = "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS.provision_oracle_account(:username, :pwd, :dba); END;";
+            $this->db->execute($pkgSql, [
+                'username' => $norm,
+                'pwd' => $tempPassword,
+                'dba' => $dbaUser,
+            ]);
+            $executedViaPackage = true;
+        } catch (\Throwable $pkgErr) {
+            $sql = "CREATE USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
+            $this->db->executeDdl($sql);
+        }
 
-        // Audit CDB
-        $this->db->execute(
-            "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS) " .
-            "VALUES (SYSTIMESTAMP, :dba, 'CREATE_ORACLE_COMMON_USER', :target, 'Compte commun créé sans droit de session', 'SUCCESS')",
-            ['dba' => $dbaUser, 'target' => $oracleUser]
-        );
+        if (!$executedViaPackage) {
+            // Audit CDB
+            $this->db->execute(
+                "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS) " .
+                "VALUES (SYSTIMESTAMP, :dba, 'CREATE_ORACLE_COMMON_USER', :target, 'Compte commun créé sans droit de session', 'SUCCESS')",
+                ['dba' => $dbaUser, 'target' => $oracleUser]
+            );
+        }
 
         return $tempPassword;
     }
@@ -214,7 +227,14 @@ class DeveloperService
             $this->db->switchContainer('CDB$ROOT');
         }
 
-        $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK CONTAINER = ALL");
+        try {
+            $this->db->execute(
+                "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS.lock_account(:username, :dba); END;",
+                ['username' => $norm, 'dba' => $dbaUser]
+            );
+        } catch (\Throwable $e) {
+            $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK CONTAINER = ALL");
+        }
         return true;
     }
 
@@ -231,7 +251,14 @@ class DeveloperService
             $this->db->switchContainer('CDB$ROOT');
         }
 
-        $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = ALL");
+        try {
+            $this->db->execute(
+                "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS.unlock_account(:username, :dba); END;",
+                ['username' => $norm, 'dba' => $dbaUser]
+            );
+        } catch (\Throwable $e) {
+            $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = ALL");
+        }
         return true;
     }
 
