@@ -75,6 +75,29 @@
                                 <div class="alert alert-warning py-2 px-3 small mb-0 mt-2">
                                     🔒 Le mot de passe sera marqué <strong>PASSWORD EXPIRE</strong> et vous sera révélé <strong>une seule fois</strong> sur l'écran suivant avec un bouton <strong>COPIER</strong>.
                                 </div>
+
+                                <?php $sessVault = (string)\App\Core\App::getInstance()->getSession()->get('vault_user', ''); ?>
+                                <?php if (!empty($sessVault)): ?>
+                                    <div class="mt-3 p-2 bg-white rounded border small d-flex align-items-center">
+                                        <span class="badge bg-success me-2">🛡️ Database Vault</span>
+                                        <span>Création sécurisée via <strong><?= e($sessVault) ?></strong></span>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="mt-3 p-2 bg-white rounded border">
+                                        <span class="badge bg-secondary mb-1">🛡️ Option Database Vault</span>
+                                        <div class="text-muted extra-small mb-2" style="font-size:0.8rem;">
+                                            Renseignez ces identifiants uniquement si Oracle Database Vault est actif sur la base.
+                                        </div>
+                                        <div class="row g-2">
+                                            <div class="col-sm-6">
+                                                <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="C##VOLTMANAGER">
+                                            </div>
+                                            <div class="col-sm-6">
+                                                <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe C##VOLTMANAGER">
+                                            </div>
+                                        </div>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         </div>
 

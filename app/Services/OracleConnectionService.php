@@ -143,6 +143,51 @@ class OracleConnectionService
         $session->remove('current_mode');
         $session->remove('current_cdb');
         $session->remove('current_pdb');
+        $session->remove('vault_user');
+        $session->remove('vault_password');
+    }
+
+    /**
+     * Crée une connexion directe avec des identifiants spécifiques (ex: C##VOLTMANAGER)
+     */
+    public function createCustomConnection(string $username, string $password, string $mode = 'NORMAL'): ?OracleConnection
+    {
+        $session = App::getInstance()->getSession();
+        $server = $session->get('current_server');
+        $service = $session->get('current_service');
+
+        if (!$server || !$service) {
+            return null;
+        }
+
+        return new OracleConnection(
+            $server['ip_address'],
+            (int)$server['port'],
+            $service,
+            $username,
+            $password,
+            $mode
+        );
+    }
+
+    /**
+     * Retourne une connexion active avec le compte Vault Manager s'il est configuré en session
+     */
+    public function getVaultConnection(): ?OracleConnection
+    {
+        $session = App::getInstance()->getSession();
+        $vaultUser = (string)$session->get('vault_user', '');
+        $vaultPassword = (string)$session->get('vault_password', '');
+
+        if (empty($vaultUser) || empty($vaultPassword)) {
+            return null;
+        }
+
+        try {
+            return $this->createCustomConnection($vaultUser, $vaultPassword, 'NORMAL');
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 }
 

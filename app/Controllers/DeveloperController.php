@@ -70,6 +70,14 @@ class DeveloperController extends Controller
         $pwdMode = (string)$request->post('password_mode', 'auto');
         $customPassword = $pwdMode === 'manual' ? (string)$request->post('custom_password', '') : null;
 
+        // Support Database Vault optionnel
+        $vaultUser = trim((string)$request->post('vault_user', ''));
+        $vaultPassword = (string)$request->post('vault_password', '');
+        if (!empty($vaultUser) && !empty($vaultPassword)) {
+            $this->session->set('vault_user', strtoupper($vaultUser));
+            $this->session->set('vault_password', $vaultPassword);
+        }
+
         try {
             $devId = $devService->createDeveloper([
                 'username' => $username,
@@ -79,7 +87,13 @@ class DeveloperController extends Controller
             ], $dbaUser);
 
             if ($provisionOracle) {
-                $tempPassword = $devService->provisionOracleAccount($username, $dbaUser, $customPassword);
+                $tempPassword = $devService->provisionOracleAccount(
+                    $username,
+                    $dbaUser,
+                    $customPassword,
+                    !empty($vaultUser) ? $vaultUser : null,
+                    !empty($vaultPassword) ? $vaultPassword : null
+                );
                 $this->session->set('_temp_revealed_password', $tempPassword);
                 $this->flash('success', "Le développeur et son compte Oracle commun C##{$username} ont été créés avec succès (PASSWORD EXPIRE appliqué).");
             } else {
@@ -211,8 +225,22 @@ class DeveloperController extends Controller
         $pwdMode = (string)$request->post('password_mode', 'auto');
         $customPassword = $pwdMode === 'manual' ? (string)$request->post('custom_password', '') : null;
 
+        // Support Database Vault optionnel
+        $vaultUser = trim((string)$request->post('vault_user', ''));
+        $vaultPassword = (string)$request->post('vault_password', '');
+        if (!empty($vaultUser) && !empty($vaultPassword)) {
+            $this->session->set('vault_user', strtoupper($vaultUser));
+            $this->session->set('vault_password', $vaultPassword);
+        }
+
         try {
-            $tempPassword = $devService->provisionOracleAccount($developer['USERNAME'], $dbaUser, $customPassword);
+            $tempPassword = $devService->provisionOracleAccount(
+                $developer['USERNAME'],
+                $dbaUser,
+                $customPassword,
+                !empty($vaultUser) ? $vaultUser : null,
+                !empty($vaultPassword) ? $vaultPassword : null
+            );
 
             // Stocker le mot de passe temporaire pour affichage unique dans la session
             $this->session->set('_temp_revealed_password', $tempPassword);

@@ -163,8 +163,13 @@ class DeveloperService
      * Règle de sécurité : CREATE USER C##... IDENTIFIED BY ... PASSWORD EXPIRE CONTAINER = ALL;
      * AUCUN PRIVILÈGE CREATE SESSION N'EST DONNÉ À CE NIVEAU !
      */
-    public function provisionOracleAccount(string $username, string $dbaUser, ?string $customPassword = null): string
-    {
+    public function provisionOracleAccount(
+        string $username,
+        string $dbaUser,
+        ?string $customPassword = null,
+        ?string $explicitVaultUser = null,
+        ?string $explicitVaultPassword = null
+    ): string {
         $norm = strtoupper(trim($username));
         if (str_starts_with($norm, 'C##')) {
             $norm = substr($norm, 3);
@@ -182,34 +187,73 @@ class DeveloperService
             $tempPassword = zirioam_generate_secure_password(14);
         }
 
-        // Exécution dans CDB$ROOT
-        $currentCon = $this->db->getCurrentContainer();
-        if ($currentCon !== 'CDB$ROOT') {
-            $this->db->switchContainer('CDB$ROOT');
+        // 1. Tenter d'abord avec Vault Manager (si Database Vault est actif)
+        $connService = new \App\Services\OracleConnectionService();
+        $vaultConn = null;
+        if (!empty($explicitVaultUser) && !empty($explicitVaultPassword)) {
+            $vaultConn = $connService->createCustomConnection($explicitVaultUser, $explicitVaultPassword);
+        } else {
+            $vaultConn = $connService->getVaultConnection();
         }
 
-        $executedViaPackage = false;
+        $executed = false;
+        if ($vaultConn) {
+            try {
+                $curCon = $vaultConn->getCurrentContainer();
+                if ($curCon !== 'CDB$ROOT') {
+                    $vaultConn->switchContainer('CDB$ROOT');
+                }
+                $sql = "CREATE USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
+                $vaultConn->executeDdl($sql);
+                $executed = true;
+            } catch (\Throwable $ve) {
+                // Si échec sur vaultConn, continuer vers les alternatives
+            } finally {
+                $vaultConn->close();
+            }
+        }
+
+        // 2. Si non exécuté via Vault, tenter via package PL/SQL ou DDL direct
+        if (!$executed) {
+            $currentCon = $this->db->getCurrentContainer();
+            if ($currentCon !== 'CDB$ROOT') {
+                $this->db->switchContainer('CDB$ROOT');
+            }
+
+            try {
+                $pkgSql = "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS.provision_oracle_account(:username, :pwd, :dba); END;";
+                $this->db->execute($pkgSql, [
+                    'username' => $norm,
+                    'pwd' => $tempPassword,
+                    'dba' => $dbaUser,
+                ]);
+                $executed = true;
+            } catch (\Throwable $pkgErr) {
+                try {
+                    $sql = "CREATE USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
+                    $this->db->executeDdl($sql);
+                    $executed = true;
+                } catch (\Throwable $ddlErr) {
+                    $errMsg = $ddlErr->getMessage();
+                    if (strpos($errMsg, 'ORA-01031') !== false || strpos($errMsg, 'ORA-474') !== false) {
+                        throw new \RuntimeException(
+                            "Échec de création du compte Oracle : ORA-01031 (Database Vault actif). " .
+                            "Veuillez renseigner les identifiants du compte habilité (C##VOLTMANAGER) pour la création des utilisateurs."
+                        );
+                    }
+                    throw $ddlErr;
+                }
+            }
+        }
+
+        // Audit CDB
         try {
-            $pkgSql = "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS.provision_oracle_account(:username, :pwd, :dba); END;";
-            $this->db->execute($pkgSql, [
-                'username' => $norm,
-                'pwd' => $tempPassword,
-                'dba' => $dbaUser,
-            ]);
-            $executedViaPackage = true;
-        } catch (\Throwable $pkgErr) {
-            $sql = "CREATE USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
-            $this->db->executeDdl($sql);
-        }
-
-        if (!$executedViaPackage) {
-            // Audit CDB
             $this->db->execute(
                 "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS) " .
                 "VALUES (SYSTIMESTAMP, :dba, 'CREATE_ORACLE_COMMON_USER', :target, 'Compte commun créé sans droit de session', 'SUCCESS')",
                 ['dba' => $dbaUser, 'target' => $oracleUser]
             );
-        }
+        } catch (\Throwable $e) {}
 
         return $tempPassword;
     }
@@ -221,6 +265,23 @@ class DeveloperService
     {
         $norm = strtoupper(trim($username));
         $oracleUser = str_starts_with($norm, 'C##') ? $norm : 'C##' . $norm;
+
+        // Tenter via connexion Vault si disponible
+        $connService = new \App\Services\OracleConnectionService();
+        $vaultConn = $connService->getVaultConnection();
+        if ($vaultConn) {
+            try {
+                $curCon = $vaultConn->getCurrentContainer();
+                if ($curCon !== 'CDB$ROOT') {
+                    $vaultConn->switchContainer('CDB$ROOT');
+                }
+                $vaultConn->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK CONTAINER = ALL");
+                $vaultConn->close();
+                return true;
+            } catch (\Throwable $ve) {
+                $vaultConn->close();
+            }
+        }
 
         $currentCon = $this->db->getCurrentContainer();
         if ($currentCon !== 'CDB$ROOT') {
@@ -245,6 +306,23 @@ class DeveloperService
     {
         $norm = strtoupper(trim($username));
         $oracleUser = str_starts_with($norm, 'C##') ? $norm : 'C##' . $norm;
+
+        // Tenter via connexion Vault si disponible
+        $connService = new \App\Services\OracleConnectionService();
+        $vaultConn = $connService->getVaultConnection();
+        if ($vaultConn) {
+            try {
+                $curCon = $vaultConn->getCurrentContainer();
+                if ($curCon !== 'CDB$ROOT') {
+                    $vaultConn->switchContainer('CDB$ROOT');
+                }
+                $vaultConn->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = ALL");
+                $vaultConn->close();
+                return true;
+            } catch (\Throwable $ve) {
+                $vaultConn->close();
+            }
+        }
 
         $currentCon = $this->db->getCurrentContainer();
         if ($currentCon !== 'CDB$ROOT') {

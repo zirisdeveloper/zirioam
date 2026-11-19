@@ -45,8 +45,23 @@ class PasswordController extends Controller
         $pwdMode = (string)$request->post('password_mode', 'auto');
         $customPassword = $pwdMode === 'manual' ? (string)$request->post('custom_password', '') : null;
 
+        // Récupération optionnelle des identifiants Vault Manager saisis dans la modal
+        $vaultUser = trim((string)$request->post('vault_user', ''));
+        $vaultPassword = (string)$request->post('vault_password', '');
+        if (!empty($vaultUser) && !empty($vaultPassword)) {
+            $this->session->set('vault_user', strtoupper($vaultUser));
+            $this->session->set('vault_password', $vaultPassword);
+        }
+
         try {
-            $tempPassword = $pwdService->resetPassword($developer['USERNAME'], $dbaUser, $clientIp, $customPassword);
+            $tempPassword = $pwdService->resetPassword(
+                $developer['USERNAME'],
+                $dbaUser,
+                $clientIp,
+                $customPassword,
+                !empty($vaultUser) ? $vaultUser : null,
+                !empty($vaultPassword) ? $vaultPassword : null
+            );
 
             // Stocker pour affichage unique dans le bandeau d'alerte sécurisé
             $this->session->set('_temp_revealed_password', $tempPassword);
