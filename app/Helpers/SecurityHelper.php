@@ -114,3 +114,33 @@ if (!function_exists('zirioam_normalize_identifier')) {
     }
 }
 
+if (!function_exists('zirioam_validate_oracle_password')) {
+    /**
+     * Valide les critères de complexité minimale d'un mot de passe pour Oracle 19c
+     * @return array<string> Liste des erreurs s'il y en a
+     */
+    function zirioam_validate_oracle_password(string $pwd): array
+    {
+        $errors = [];
+        if (strlen($pwd) < 8) {
+            $errors[] = "Le mot de passe doit comporter au moins 8 caractères.";
+        }
+        if (strlen($pwd) > 30) {
+            $errors[] = "Le mot de passe ne doit pas dépasser 30 caractères.";
+        }
+        if (!preg_match('/[A-Z]/', $pwd)) {
+            $errors[] = "Le mot de passe doit contenir au moins une lettre majuscule.";
+        }
+        if (!preg_match('/[a-z]/', $pwd)) {
+            $errors[] = "Le mot de passe doit contenir au moins une lettre minuscule.";
+        }
+        if (!preg_match('/[0-9]/', $pwd)) {
+            $errors[] = "Le mot de passe doit contenir au moins un chiffre.";
+        }
+        if (strpos($pwd, '"') !== false) {
+            $errors[] = "Le caractère guillemet double (\") n'est pas autorisé dans le mot de passe.";
+        }
+        return $errors;
+    }
+}
+

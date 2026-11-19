@@ -65,15 +65,27 @@ class DeveloperController extends Controller
         $devService = new DeveloperService($db);
         $dbaUser = $this->session->get('current_user', 'DBA');
 
+        $username = (string)$request->post('username', '');
+        $provisionOracle = $request->post('provision_oracle') === '1';
+        $pwdMode = (string)$request->post('password_mode', 'auto');
+        $customPassword = $pwdMode === 'manual' ? (string)$request->post('custom_password', '') : null;
+
         try {
             $devId = $devService->createDeveloper([
-                'username' => $request->post('username'),
+                'username' => $username,
                 'full_name' => $request->post('full_name'),
                 'email' => $request->post('email'),
                 'status' => $request->post('status', 'ACTIVE'),
             ], $dbaUser);
 
-            $this->flash('success', "Le développeur a été créé avec succès dans le référentiel ZIRIOAM.");
+            if ($provisionOracle) {
+                $tempPassword = $devService->provisionOracleAccount($username, $dbaUser, $customPassword);
+                $this->session->set('_temp_revealed_password', $tempPassword);
+                $this->flash('success', "Le développeur et son compte Oracle commun C##{$username} ont été créés avec succès (PASSWORD EXPIRE appliqué).");
+            } else {
+                $this->flash('success', "Le développeur a été créé avec succès dans le référentiel ZIRIOAM.");
+            }
+
             return $this->redirect("/developers/{$devId}");
         } catch (\Throwable $e) {
             $this->flash('danger', "Échec de création : " . $e->getMessage());
@@ -196,9 +208,11 @@ class DeveloperController extends Controller
         }
 
         $dbaUser = $this->session->get('current_user', 'DBA');
+        $pwdMode = (string)$request->post('password_mode', 'auto');
+        $customPassword = $pwdMode === 'manual' ? (string)$request->post('custom_password', '') : null;
 
         try {
-            $tempPassword = $devService->provisionOracleAccount($developer['USERNAME'], $dbaUser);
+            $tempPassword = $devService->provisionOracleAccount($developer['USERNAME'], $dbaUser, $customPassword);
 
             // Stocker le mot de passe temporaire pour affichage unique dans la session
             $this->session->set('_temp_revealed_password', $tempPassword);

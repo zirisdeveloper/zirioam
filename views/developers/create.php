@@ -38,8 +38,44 @@
                             </select>
                         </div>
 
-                        <div class="alert alert-info small border mb-4">
-                            ℹ️ <strong>Règle de sécurité :</strong> L'enregistrement de l'identité n'ouvre aucun compte ni droit Oracle automatiquement. Vous pourrez provisionner le compte commun dans la fiche détaillée.
+                        <!-- Option de provisionnement immédiat et mot de passe -->
+                        <div class="card border bg-light mb-4 p-3 rounded-2">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="provision_oracle" id="provision_oracle" value="1" checked>
+                                <label class="form-check-label fw-bold text-dark" for="provision_oracle">
+                                    Créer le compte Oracle commun immédiatement (C##...)
+                                </label>
+                            </div>
+                            <div class="form-text mb-3">
+                                Si activé, l'ordre <code>CREATE USER C##... CONTAINER = ALL</code> est exécuté en base avec expiration obligatoire du mot de passe.
+                            </div>
+
+                            <div id="password-options" class="ps-2 border-start border-3 border-primary">
+                                <label class="form-label fw-semibold text-dark small mb-2">Attribution du mot de passe initial :</label>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="password_mode" id="pwd_mode_auto" value="auto" checked>
+                                    <label class="form-check-label" for="pwd_mode_auto">
+                                        <strong>Génération automatique sécurisée</strong> (Recommandé : 14 caractères alphanumériques + symboles)
+                                    </label>
+                                </div>
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="radio" name="password_mode" id="pwd_mode_manual" value="manual">
+                                    <label class="form-check-label" for="pwd_mode_manual">
+                                        <strong>Saisie manuelle</strong> par le DBA
+                                    </label>
+                                </div>
+
+                                <div id="manual-password-block" class="mb-2 d-none">
+                                    <label for="custom_password" class="form-label small fw-semibold">Mot de passe temporaire souhaité</label>
+                                    <input type="password" name="custom_password" id="custom_password" class="form-control" 
+                                           placeholder="Min. 8 car. (Majuscule, minuscule, chiffre)" autocomplete="new-password">
+                                    <div class="form-text small">Doit respecter les critères de complexité Oracle 19c.</div>
+                                </div>
+
+                                <div class="alert alert-warning py-2 px-3 small mb-0 mt-2">
+                                    🔒 Le mot de passe sera marqué <strong>PASSWORD EXPIRE</strong> et vous sera révélé <strong>une seule fois</strong> sur l'écran suivant avec un bouton <strong>COPIER</strong>.
+                                </div>
+                            </div>
                         </div>
 
                         <div class="d-flex justify-content-between align-items-center">
@@ -50,6 +86,48 @@
                                 Créer le développeur &rarr;
                             </button>
                         </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const chkProvision = document.getElementById('provision_oracle');
+    const pwdOptions = document.getElementById('password-options');
+    const radAuto = document.getElementById('pwd_mode_auto');
+    const radManual = document.getElementById('pwd_mode_manual');
+    const manualBlock = document.getElementById('manual-password-block');
+    const customPwd = document.getElementById('custom_password');
+
+    function syncProvision() {
+        if (chkProvision.checked) {
+            pwdOptions.classList.remove('d-none');
+        } else {
+            pwdOptions.classList.add('d-none');
+        }
+    }
+
+    function syncPasswordMode() {
+        if (radManual.checked) {
+            manualBlock.classList.remove('d-none');
+            customPwd.required = true;
+        } else {
+            manualBlock.classList.add('d-none');
+            customPwd.required = false;
+        }
+    }
+
+    chkProvision.addEventListener('change', syncProvision);
+    radAuto.addEventListener('change', syncPasswordMode);
+    radManual.addEventListener('change', syncPasswordMode);
+
+    syncProvision();
+    syncPasswordMode();
+});
+</script>
                     </form>
                 </div>
             </div>

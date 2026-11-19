@@ -99,14 +99,28 @@
                 </div>
                 <div class="card-body">
                     <?php if (!$hasAccount): ?>
-                        <div class="alert alert-warning border-warning p-3 mb-4">
+                        <div class="alert alert-warning border-warning p-3 mb-3">
                             <h6 class="fw-bold text-dark mb-1">Compte Oracle non encore provisionné</h6>
                             <p class="small mb-0 text-muted">
                                 Ce développeur est enregistré dans le référentiel ZIRIOAM mais ne possède pas encore de compte utilisateur physique dans Oracle 19c.
                             </p>
                         </div>
-                        <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/provision') ?>" method="POST">
+                        <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/provision') ?>" method="POST" class="p-3 border rounded bg-light mb-4">
                             <?= zirioam_csrf_field() ?>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold small text-dark mb-2">Choix du mot de passe initial :</label>
+                                <div class="form-check mb-1">
+                                    <input class="form-check-input" type="radio" name="password_mode" id="prov_auto" value="auto" checked onchange="document.getElementById('prov_manual_wrap').classList.add('d-none'); document.getElementById('prov_custom_pwd').required = false;">
+                                    <label class="form-check-label small" for="prov_auto">Génération automatique sécurisée (14 car., recommandé)</label>
+                                </div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="password_mode" id="prov_manual" value="manual" onchange="document.getElementById('prov_manual_wrap').classList.remove('d-none'); document.getElementById('prov_custom_pwd').required = true;">
+                                    <label class="form-check-label small" for="prov_manual">Saisie manuelle d'un mot de passe</label>
+                                </div>
+                                <div id="prov_manual_wrap" class="d-none mt-2">
+                                    <input type="password" name="custom_password" id="prov_custom_pwd" class="form-control form-control-sm" placeholder="Min. 8 car. (Majuscule, minuscule, chiffre)">
+                                </div>
+                            </div>
                             <button type="submit" class="btn btn-primary py-2 w-100 fw-bold" data-confirm="Créer le compte Oracle commun C##<?= e($developer['USERNAME']) ?> avec CONTAINER = ALL ?">
                                 ➕ Créer le Compte Oracle Commun (CDB$ROOT) &rarr;
                             </button>
@@ -127,13 +141,10 @@
 
                         <!-- Boutons d'Action sur le Compte Oracle -->
                         <div class="d-flex flex-wrap gap-2 mb-4">
-                            <!-- Réinitialisation du mot de passe (Section 11) -->
-                            <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/password-reset') ?>" method="POST" class="d-inline">
-                                <?= zirioam_csrf_field() ?>
-                                <button type="submit" class="btn btn-danger fw-bold" data-confirm="Générer un nouveau mot de passe temporaire expiré pour <?= e($developer['ORACLE_USER']) ?> ?">
-                                    🔑 Réinitialiser le Mot de Passe
-                                </button>
-                            </form>
+                            <!-- Bouton ouvrant le modal de Réinitialisation -->
+                            <button type="button" class="btn btn-danger fw-bold" data-bs-toggle="modal" data-bs-target="#resetPasswordModal">
+                                🔑 Réinitialiser le Mot de Passe
+                            </button>
 
                             <!-- Verrouillage / Déverrouillage Oracle -->
                             <?php if ($isLocked): ?>
@@ -212,6 +223,59 @@
                     <?php endif; ?>
                 </tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Réinitialisation Mot de Passe -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1" aria-labelledby="resetPasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/password-reset') ?>" method="POST">
+                <?= zirioam_csrf_field() ?>
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title fw-bold" id="resetPasswordModalLabel">🔑 Réinitialiser le Mot de Passe</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3">
+                        Utilisateur cible : <strong class="font-monospace text-danger"><?= e($developer['ORACLE_USER']) ?></strong>
+                    </p>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-dark mb-2">Méthode d'attribution :</label>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="password_mode" id="rst_mode_auto" value="auto" checked 
+                                   onchange="document.getElementById('rst_manual_wrap').classList.add('d-none'); document.getElementById('rst_custom_pwd').required = false;">
+                            <label class="form-check-label" for="rst_mode_auto">
+                                <strong>Génération automatique robuste</strong> (14 car., hautement sécurisé)
+                            </label>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="radio" name="password_mode" id="rst_mode_manual" value="manual"
+                                   onchange="document.getElementById('rst_manual_wrap').classList.remove('d-none'); document.getElementById('rst_custom_pwd').required = true;">
+                            <label class="form-check-label" for="rst_mode_manual">
+                                <strong>Saisir un mot de passe manuellement</strong>
+                            </label>
+                        </div>
+
+                        <div id="rst_manual_wrap" class="d-none mb-3">
+                            <label for="rst_custom_pwd" class="form-label small fw-semibold">Nouveau mot de passe temporaire</label>
+                            <input type="password" name="custom_password" id="rst_custom_pwd" class="form-control" 
+                                   placeholder="Min. 8 car. (Majuscule, minuscule, chiffre)" autocomplete="new-password">
+                            <div class="form-text small">Conforme aux règles de complexité Oracle.</div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-warning small mb-0 py-2">
+                        ⚠️ La clause <strong>PASSWORD EXPIRE CONTAINER = ALL</strong> sera appliquée. Le mot de passe vous sera révélé <strong>une seule fois</strong> après validation.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-danger fw-bold">Valider la réinitialisation</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>

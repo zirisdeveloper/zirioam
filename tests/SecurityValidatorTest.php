@@ -37,6 +37,12 @@ class SecurityValidatorTest
         $decrypted = EncryptionService::decrypt($encrypted);
         assert($decrypted === $secretText, "Le déchiffrement AES-256-GCM doit restituer exactement le secret initial.");
         echo "  [PASS] Chiffrement/déchiffrement OpenSSL AES-256-GCM en mémoire validé.\n";
+        // 4. Validation de la complexité des mots de passe manuels Oracle
+        assert(empty(zirioam_validate_oracle_password('TempPassw0rd#')), "TempPassw0rd# doit être valide.");
+        assert(!empty(zirioam_validate_oracle_password('short1A')), "Mot de passe < 8 car. doit être rejeté.");
+        assert(!empty(zirioam_validate_oracle_password('alllowercaseno1')), "Mot de passe sans majuscule/chiffre doit être rejeté.");
+        assert(!empty(zirioam_validate_oracle_password('Bad"Password123')), "Mot de passe avec guillemet double doit être rejeté.");
+        echo "  [PASS] Validation des règles de complexité des mots de passe Oracle validée.\n";
     }
 }
 

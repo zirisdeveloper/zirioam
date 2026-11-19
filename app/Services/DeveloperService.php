@@ -163,7 +163,7 @@ class DeveloperService
      * Règle de sécurité : CREATE USER C##... IDENTIFIED BY ... PASSWORD EXPIRE CONTAINER = ALL;
      * AUCUN PRIVILÈGE CREATE SESSION N'EST DONNÉ À CE NIVEAU !
      */
-    public function provisionOracleAccount(string $username, string $dbaUser): string
+    public function provisionOracleAccount(string $username, string $dbaUser, ?string $customPassword = null): string
     {
         $norm = strtoupper(trim($username));
         if (str_starts_with($norm, 'C##')) {
@@ -171,8 +171,16 @@ class DeveloperService
         }
         $oracleUser = 'C##' . $norm;
 
-        // Génération d'un mot de passe temporaire fort
-        $tempPassword = zirioam_generate_secure_password(14);
+        // Validation ou génération du mot de passe
+        if (!empty($customPassword)) {
+            $errors = zirioam_validate_oracle_password($customPassword);
+            if (!empty($errors)) {
+                throw new \InvalidArgumentException(implode(' ', $errors));
+            }
+            $tempPassword = $customPassword;
+        } else {
+            $tempPassword = zirioam_generate_secure_password(14);
+        }
 
         // Exécution de l'ordre DDL dans CDB$ROOT
         $currentCon = $this->db->getCurrentContainer();

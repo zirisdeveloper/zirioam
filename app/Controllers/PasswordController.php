@@ -42,9 +42,11 @@ class PasswordController extends Controller
 
         $dbaUser = $this->session->get('current_user', 'DBA');
         $clientIp = $request->header('X-Forwarded-For') ?? $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $pwdMode = (string)$request->post('password_mode', 'auto');
+        $customPassword = $pwdMode === 'manual' ? (string)$request->post('custom_password', '') : null;
 
         try {
-            $tempPassword = $pwdService->resetPassword($developer['USERNAME'], $dbaUser, $clientIp);
+            $tempPassword = $pwdService->resetPassword($developer['USERNAME'], $dbaUser, $clientIp, $customPassword);
 
             // Stocker pour affichage unique dans le bandeau d'alerte sécurisé
             $this->session->set('_temp_revealed_password', $tempPassword);

@@ -23,13 +23,21 @@ class PasswordResetService
      * 3. AUCUN mot de passe stocké en clair ou dans les logs
      * 4. Révélation unique
      */
-    public function resetPassword(string $username, string $dbaUser, ?string $clientIp = null): string
+    public function resetPassword(string $username, string $dbaUser, ?string $clientIp = null, ?string $customPassword = null): string
     {
         $norm = strtoupper(trim($username));
         $oracleUser = str_starts_with($norm, 'C##') ? $norm : 'C##' . $norm;
 
-        // Génération du secret temporaire
-        $tempPassword = zirioam_generate_secure_password(14);
+        // Validation ou génération du mot de passe
+        if (!empty($customPassword)) {
+            $errors = zirioam_validate_oracle_password($customPassword);
+            if (!empty($errors)) {
+                throw new \InvalidArgumentException(implode(' ', $errors));
+            }
+            $tempPassword = $customPassword;
+        } else {
+            $tempPassword = zirioam_generate_secure_password(14);
+        }
 
         // Bascule obligatoire dans CDB$ROOT pour appliquer CONTAINER = ALL
         $currentCon = $this->db->getCurrentContainer();
