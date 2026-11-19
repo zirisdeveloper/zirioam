@@ -74,7 +74,7 @@
       "id": "pdb_005",
       "name": "Installation des packages PL/SQL (Accès PDB & Moteur DDL Contrôlé)",
       "file": "pdb/005_create_packages.sql",
-      "sha256": "BBE8B7DFFB7938E135474EA63A67BDDAFFF77F42CE3502D9302ABA683019D42C",
+      "sha256": "3D4F427F2921AB4729310FB2B6A2B873F47A13AC2A4063270EE2FBBCFFE7763C",
       "target_container": "PDB"
     },
     {
@@ -82,7 +82,7 @@
       "id": "pdb_006",
       "name": "Création des vues de synthèse des privilèges et métriques",
       "file": "pdb/006_create_views.sql",
-      "sha256": "6585ABA184A8B8921BF6438F548A9AA30EFD99F1F9F813F94D06832B43A38322",
+      "sha256": "9FB9423AE7651F6A0DA8AB89ECDD677AAF2E70D1C968DE37B4594CF9D449AF57",
       "target_container": "PDB"
     },
     {

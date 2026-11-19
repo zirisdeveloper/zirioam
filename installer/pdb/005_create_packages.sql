@@ -80,7 +80,6 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
     ) RETURN NUMBER IS
         v_role_name  VARCHAR2(128);
         v_role_id    NUMBER;
-        v_role_count NUMBER;
     BEGIN
         -- Format normalisé du nom de rôle Oracle : R_<SCHEMA>_<TYPE_ACCES>
         -- Exemple : R_GESTION_READ, R_GESTION_WRITE
@@ -93,11 +92,15 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
                            ELSE SUBSTR(UPPER(TRIM(p_profile_type)), 1, 10)
                        END;
 
-        -- Création physique du rôle dans la PDB
-        SELECT COUNT(*) INTO v_role_count FROM DBA_ROLES WHERE ROLE = v_role_name;
-        IF v_role_count = 0 THEN
+        -- Création physique du rôle dans la PDB si inexistant (idempotent, sans dépendance sur DBA_ROLES)
+        BEGIN
             EXECUTE IMMEDIATE 'CREATE ROLE ' || v_role_name;
-        END IF;
+        EXCEPTION
+            WHEN OTHERS THEN
+                IF SQLCODE != -1921 THEN -- ORA-01921: rôle déjà existant
+                    RAISE;
+                END IF;
+        END;
 
         -- Enregistrement dans le catalogue ZIRIOAM_ACCESS_ROLES
         MERGE INTO ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES dest
