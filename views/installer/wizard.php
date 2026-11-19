@@ -64,7 +64,41 @@
                         </table>
                     </div>
 
-                    <!-- 3. Formulaire de confirmation explicite -->
+                    <!-- 3. Option Database Vault / Vault Manager -->
+                    <h5 class="fw-bold text-dark border-bottom pb-2 mb-3">3. Database Vault & Habilitation des Utilisateurs</h5>
+                    <?php 
+                        $sessVaultUser = \App\Core\App::getInstance()->getSession()->get('vault_user', '');
+                    ?>
+                    <div class="card bg-light border mb-4 p-3 rounded-2">
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" name="use_vault_manager" id="use_vault_manager" value="1" 
+                                   <?= !empty($sessVaultUser) ? 'checked' : '' ?> onchange="document.getElementById('vault-fields').classList.toggle('d-none', !this.checked)">
+                            <label class="form-check-label fw-bold text-dark" for="use_vault_manager">
+                                Environnement Database Vault actif / Délégation de privilèges (C##VOLTMANAGER)
+                            </label>
+                        </div>
+                        <p class="small text-muted mb-3">
+                            En environnement Database Vault, le compte <code>SYS/SYSTEM</code> ne peut pas modifier les utilisateurs communs. 
+                            L'application utilisera le compte Vault Manager indiqué pour se connecter automatiquement après l'étape 4 et accorder les privilèges <code>ALTER USER</code>, <code>CREATE USER</code> et le rôle <code>DV_ACCTMGR</code> à <code>C##ZIRIOAM_ADMIN</code>.
+                        </p>
+
+                        <div id="vault-fields" class="ps-2 border-start border-3 border-warning <?= empty($sessVaultUser) ? 'd-none' : '' ?>">
+                            <div class="row g-2">
+                                <div class="col-md-6 mb-2">
+                                    <label for="vault_user" class="form-label small fw-semibold">Utilisateur Vault Manager (ex: C##VOLTMANAGER)</label>
+                                    <input type="text" name="vault_user" id="vault_user" class="form-control font-monospace text-uppercase form-control-sm" 
+                                           value="<?= e($sessVaultUser) ?>" placeholder="C##VOLTMANAGER">
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <label for="vault_password" class="form-label small fw-semibold">Mot de passe Vault Manager</label>
+                                    <input type="password" name="vault_password" id="vault_password" class="form-control form-control-sm" 
+                                           autocomplete="off" placeholder="Mot de passe">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. Formulaire de confirmation explicite -->
                     <div class="alert alert-warning border p-3 mb-4">
                         <h6 class="fw-bold text-dark mb-1">⚠️ Confirmation requise du DBA</h6>
                         <p class="mb-0 small text-muted">
@@ -73,9 +107,11 @@
                         </p>
                     </div>
 
-                    <form action="<?= zirioam_url('/installer/execute') ?>" method="POST">
+                    <form action="<?= zirioam_url('/installer/execute') ?>" method="POST" id="form-installer-exec">
                         <?= zirioam_csrf_field() ?>
                         <input type="hidden" name="target" value="CDB">
+                        <input type="hidden" name="vault_user_forward" id="vault_user_forward" value="">
+                        <input type="hidden" name="vault_password_forward" id="vault_password_forward" value="">
 
                         <div class="form-check mb-4">
                             <input class="form-check-input" type="checkbox" id="confirm_install" required>
@@ -98,4 +134,14 @@
         </div>
     </div>
 </div>
+
+<script>
+document.getElementById('form-installer-exec').addEventListener('submit', function() {
+    const useVault = document.getElementById('use_vault_manager').checked;
+    if (useVault) {
+        document.getElementById('vault_user_forward').value = document.getElementById('vault_user').value;
+        document.getElementById('vault_password_forward').value = document.getElementById('vault_password').value;
+    }
+});
+</script>
 

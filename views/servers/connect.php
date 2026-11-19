@@ -62,6 +62,37 @@
                             </div>
                         </div>
 
+                        <!-- Optionnel : Séparation des rôles / Database Vault (C##VOLTMANAGER) -->
+                        <div class="mb-4">
+                            <div class="accordion" id="accordionVault">
+                                <div class="accordion-item border rounded">
+                                    <h2 class="accordion-header" id="headingVault">
+                                        <button class="accordion-button collapsed py-2 px-3 bg-light text-dark fw-semibold small" 
+                                                type="button" data-bs-toggle="collapse" data-bs-target="#collapseVault" aria-expanded="false" aria-controls="collapseVault">
+                                            🛡️ Option Database Vault / Gestionnaire des Utilisateurs (ex: C##VOLTMANAGER)
+                                        </button>
+                                    </h2>
+                                    <div id="collapseVault" class="accordion-collapse collapse" aria-labelledby="headingVault" data-bs-parent="#accordionVault">
+                                        <div class="accordion-body p-3 small bg-white">
+                                            <p class="text-muted mb-2">
+                                                Si Database Vault est activé ou si la gestion des utilisateurs est déléguée à un compte dédié (ex: <code>C##VOLTMANAGER</code>), renseignez-le ici. L'application l'utilisera pour habiliter automatiquement <code>C##ZIRIOAM_ADMIN</code>.
+                                            </p>
+                                            <div class="mb-2">
+                                                <label for="vault_user" class="form-label fw-semibold">Compte Vault Manager :</label>
+                                                <input type="text" name="vault_user" id="vault_user" class="form-control font-monospace text-uppercase form-control-sm" 
+                                                       placeholder="ex: C##VOLTMANAGER">
+                                            </div>
+                                            <div class="mb-1">
+                                                <label for="vault_password" class="form-label fw-semibold">Mot de passe Vault Manager :</label>
+                                                <input type="password" name="vault_password" id="vault_password" class="form-control form-control-sm" 
+                                                       autocomplete="off" placeholder="Mot de passe C##VOLTMANAGER">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Actions -->
                         <div class="d-flex justify-content-between align-items-center">
                             <a href="<?= zirioam_url('/servers') ?>" class="btn btn-outline-secondary">

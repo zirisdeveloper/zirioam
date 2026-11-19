@@ -45,7 +45,10 @@
                         <a class="nav-link" href="<?= zirioam_url('/audit') ?>">Audit & Traçabilité</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-warning" href="<?= zirioam_url('/installer/status') ?>">État Composants</a>
+                        <a class="nav-link text-warning" href="<?= zirioam_url('/installer/status?view=1') ?>">État Composants</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-info" href="<?= zirioam_url('/installer/maintenance') ?>">🛠️ Maintenance & Schémas</a>
                     </li>
                 </ul>
 

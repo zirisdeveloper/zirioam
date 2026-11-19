@@ -79,6 +79,14 @@ class ConnectionController extends Controller
                 $mode
             );
 
+            // Mémorisation optionnelle des identifiants Vault Manager si saisis
+            $vaultUser = trim((string)$request->post('vault_user', ''));
+            $vaultPassword = (string)$request->post('vault_password', '');
+            if (!empty($vaultUser)) {
+                $this->session->set('vault_user', strtoupper($vaultUser));
+                $this->session->set('vault_password', $vaultPassword);
+            }
+
             $this->flash('success', "Connexion établie avec succès sur {$server['server_name']} (Mode {$mode}).");
             
             // Redirection vers le détecteur d'installation ou tableau de bord

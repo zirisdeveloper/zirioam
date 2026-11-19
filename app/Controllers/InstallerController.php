@@ -35,14 +35,19 @@ class InstallerController extends Controller
         $detector = new InstallationDetectorService($db);
         $cdbStatus = $detector->detectStatus('CDB$ROOT');
 
-        // Si ZIRIOAM est déjà installé et validé, ouvrir le tableau de bord
-        if ($cdbStatus['status'] === InstallationDetectorService::INSTALLED) {
+        $forceView = $request->query('view') === '1';
+        // Si ZIRIOAM est déjà installé et validé, ouvrir le tableau de bord sauf demande explicite
+        if ($cdbStatus['status'] === InstallationDetectorService::INSTALLED && !$forceView) {
             return $this->redirect('/dashboard');
         }
 
-        // Sinon, afficher l'écran d'initialisation obligatoire (Section 9)
+        $recoveryService = new InstallationRecoveryService($db);
+        $invalidObjects = $recoveryService->getInvalidObjects();
+
+        // Afficher l'écran d'état ou d'initialisation obligatoire (Section 9)
         return $this->render('installer.status', [
             'cdbStatus' => $cdbStatus,
+            'invalidObjects' => $invalidObjects,
             'server' => $this->session->get('current_server'),
             'currentCdb' => $this->session->get('current_cdb', 'CDB_PROD'),
         ]);
@@ -93,8 +98,17 @@ class InstallerController extends Controller
         $target = $request->post('target', 'CDB'); // 'CDB' ou nom de PDB
         $stepResults = [];
 
+        // Récupération des identifiants Vault Manager (depuis le wizard ou la session)
+        $vaultUser = trim((string)$request->post('vault_user_forward', ''));
+        $vaultPassword = (string)$request->post('vault_password_forward', '');
+
+        if (empty($vaultUser)) {
+            $vaultUser = (string)$this->session->get('vault_user', '');
+            $vaultPassword = (string)$this->session->get('vault_password', '');
+        }
+
         if ($target === 'CDB') {
-            $stepResults = $installerService->installCdbComponents();
+            $stepResults = $installerService->installCdbComponents($vaultUser, $vaultPassword);
         } else {
             $stepResults = $installerService->installPdbComponents($target);
         }
@@ -119,6 +133,83 @@ class InstallerController extends Controller
             'stepResults' => $stepResults,
             'target' => $target,
             'hasFailed' => $hasFailed,
+        ]);
+    }
+
+    /**
+     * Interface de Maintenance et Réexécution des Composants
+     */
+    public function maintenance(Request $request): Response
+    {
+        $db = $this->connectionService->getActiveConnection();
+        if (!$db) return $this->redirect('/servers');
+
+        $discoveryService = new \App\Services\OracleDiscoveryService($db);
+        $pdbs = $discoveryService->discoverPdbs();
+
+        $sessVaultUser = $this->session->get('vault_user', '');
+
+        return $this->render('installer.maintenance', [
+            'pdbs' => $pdbs,
+            'sessVaultUser' => $sessVaultUser,
+            'server' => $this->session->get('current_server'),
+            'results' => null,
+            'target' => 'CDB$ROOT',
+        ]);
+    }
+
+    /**
+     * Traitement de la Réexécution / Mise à jour des Composants
+     */
+    public function redeploy(Request $request): Response
+    {
+        $db = $this->connectionService->getActiveConnection();
+        if (!$db) return $this->redirect('/servers');
+
+        $target = (string)$request->post('target_container', 'CDB$ROOT');
+        $replaceObjects = $request->post('replace_objects') === '1';
+        $reapplyGrants = $request->post('reapply_grants') === '1';
+
+        $vaultUser = trim((string)$request->post('vault_user', ''));
+        $vaultPassword = (string)$request->post('vault_password', '');
+
+        if (empty($vaultUser)) {
+            $vaultUser = (string)$this->session->get('vault_user', '');
+            $vaultPassword = (string)$this->session->get('vault_password', '');
+        }
+
+        $installerService = new OracleInstallerService($db);
+        $results = $installerService->redeployComponents(
+            $target,
+            $replaceObjects,
+            $reapplyGrants,
+            !empty($vaultUser) ? $vaultUser : null,
+            !empty($vaultPassword) ? $vaultPassword : null
+        );
+
+        $hasFailed = false;
+        foreach ($results as $r) {
+            if ($r['status'] === 'FAILED') {
+                $hasFailed = true;
+                break;
+            }
+        }
+
+        if ($hasFailed) {
+            $this->flash('warning', "La réexécution s'est terminée avec des avertissements ou erreurs.");
+        } else {
+            $this->flash('success', "Tous les composants ZIRIOAM sur {$target} ont été mis à jour avec succès !");
+        }
+
+        $discoveryService = new \App\Services\OracleDiscoveryService($db);
+        $pdbs = $discoveryService->discoverPdbs();
+
+        return $this->render('installer.maintenance', [
+            'pdbs' => $pdbs,
+            'sessVaultUser' => $vaultUser,
+            'server' => $this->session->get('current_server'),
+            'results' => $results,
+            'target' => $target,
         ]);
     }
 

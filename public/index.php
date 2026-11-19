@@ -72,6 +72,8 @@ $router->get('/installer/status', [\App\Controllers\InstallerController::class, 
 $router->get('/installer/wizard', [\App\Controllers\InstallerController::class, 'wizard'], [$auth]);
 $router->post('/installer/execute', [\App\Controllers\InstallerController::class, 'execute'], [$auth, $csrf]);
 $router->post('/installer/repair', [\App\Controllers\InstallerController::class, 'repair'], [$auth, $csrf]);
+$router->get('/installer/maintenance', [\App\Controllers\InstallerController::class, 'maintenance'], [$auth]);
+$router->post('/installer/maintenance/redeploy', [\App\Controllers\InstallerController::class, 'redeploy'], [$auth, $csrf]);
 
 // Gestion des Développeurs, Comptes Communs & Mots de Passe (Phase 4)
 $router->get('/developers', [\App\Controllers\DeveloperController::class, 'index'], [$auth]);
