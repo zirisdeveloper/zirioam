@@ -160,6 +160,7 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
     ) IS
         v_oracle_user VARCHAR2(128);
         v_sql         VARCHAR2(1000);
+        v_err_msg     VARCHAR2(1000);
     BEGIN
         v_oracle_user := get_oracle_user(p_username);
 
@@ -179,12 +180,13 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
         log_audit('PASSWORD_RESET', v_oracle_user, 'Réinitialisation mot de passe temporaire (expiré)', 'SUCCESS', p_dba_user, p_client_ip);
     EXCEPTION
         WHEN OTHERS THEN
+            v_err_msg := SUBSTR(SQLERRM, 1, 1000);
             INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_PWD_RESET_LOG
                 (USERNAME, ORACLE_USER, RESET_BY_DBA, CLIENT_IP, STATUS, ERROR_MESSAGE, RESET_AT)
             VALUES
-                (p_username, v_oracle_user, p_dba_user, p_client_ip, 'FAILED', SQLERRM, SYSTIMESTAMP);
+                (p_username, v_oracle_user, p_dba_user, p_client_ip, 'FAILED', v_err_msg, SYSTIMESTAMP);
 
-            log_audit('PASSWORD_RESET', v_oracle_user, 'Échec réinitialisation : ' || SQLERRM, 'FAILED', p_dba_user, p_client_ip);
+            log_audit('PASSWORD_RESET', v_oracle_user, 'Échec réinitialisation : ' || v_err_msg, 'FAILED', p_dba_user, p_client_ip);
             RAISE;
     END reset_password;
 

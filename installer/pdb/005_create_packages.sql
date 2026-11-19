@@ -295,6 +295,8 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AS
         v_has_access  NUMBER := 0;
         v_stmt_clean  VARCHAR2(32767);
         v_exec_id     NUMBER;
+        v_sqlcode     NUMBER;
+        v_sqlerrm     VARCHAR2(4000);
     BEGIN
         -- 1. Récupération de l'identité réelle de la session appelante
         v_caller   := SYS_CONTEXT('USERENV', 'SESSION_USER');
@@ -369,13 +371,15 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AS
 
         EXCEPTION
             WHEN OTHERS THEN
+                v_sqlcode    := SQLCODE;
+                v_sqlerrm    := SUBSTR(SQLERRM, 1, 4000);
                 p_out_status := 'FAILED';
-                p_out_error  := SQLERRM;
+                p_out_error  := v_sqlerrm;
 
                 INSERT INTO ZIRIOAM_OWNER.ZIRIOAM_EXECUTION_HISTORY
                     (USERNAME, TARGET_SCHEMA, DDL_OPERATION, OBJECT_TYPE, OBJECT_NAME, DDL_STATEMENT, EXECUTION_STATUS, ORACLE_ERROR_CODE, ORACLE_ERROR_MESSAGE, EXECUTED_AT)
                 VALUES
-                    (v_caller, v_schema, v_op, v_obj_type, v_obj_name, p_ddl_statement, 'FAILED', SQLCODE, SQLERRM, SYSTIMESTAMP);
+                    (v_caller, v_schema, v_op, v_obj_type, v_obj_name, p_ddl_statement, 'FAILED', v_sqlcode, v_sqlerrm, SYSTIMESTAMP);
         END;
 
     END execute_controlled_ddl;
