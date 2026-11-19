@@ -79,12 +79,15 @@
                         <div class="mb-4">
                             <label for="target_container" class="form-label fw-bold text-dark">Conteneur Oracle Cible :</label>
                             <select name="target_container" id="target_container" class="form-select font-monospace" required>
-                                <option value="CDB$ROOT" selected>CDB$ROOT (Racine commune — Schéma C##ZIRIOAM_ADMIN)</option>
+                                <option value="CDB$ROOT" <?= (!isset($target) || $target === 'CDB$ROOT') ? 'selected' : '' ?>>
+                                    CDB$ROOT (Racine commune — Schéma C##ZIRIOAM_ADMIN)
+                                </option>
                                 <?php if (!empty($pdbs)): ?>
                                     <optgroup label="Pluggable Databases (PDBs)">
                                         <?php foreach ($pdbs as $p): ?>
-                                            <option value="<?= e($p['PDB_NAME']) ?>">
-                                                <?= e($p['PDB_NAME']) ?> (PDB Locale — Schéma ZIRIOAM_OWNER)
+                                            <?php $pdbName = $p['NAME'] ?? $p['PDB_NAME'] ?? ''; ?>
+                                            <option value="<?= e($pdbName) ?>" <?= (isset($target) && $target === $pdbName) ? 'selected' : '' ?>>
+                                                <?= e($pdbName) ?> (PDB Locale — Schéma ZIRIOAM_OWNER)
                                             </option>
                                         <?php endforeach; ?>
                                     </optgroup>
