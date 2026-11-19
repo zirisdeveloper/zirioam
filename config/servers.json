@@ -1,0 +1,47 @@
+{
+  "servers": [
+    {
+      "server_id": "ORA_PROD_01",
+      "server_name": "ORACLE-PROD-01",
+      "ip_address": "192.168.10.11",
+      "port": 1521,
+      "environment": "PRODUCTION",
+      "active": true,
+      "cdb_services": [
+        {
+          "cdb_name": "CDB_PROD",
+          "root_service": "cdbprod.company.local"
+        }
+      ]
+    },
+    {
+      "server_id": "ORA_TEST_01",
+      "server_name": "ORACLE-TEST-01",
+      "ip_address": "192.168.10.12",
+      "port": 1521,
+      "environment": "TEST",
+      "active": true,
+      "cdb_services": [
+        {
+          "cdb_name": "CDB_TEST",
+          "root_service": "cdbtest.company.local"
+        }
+      ]
+    },
+    {
+      "server_id": "ORA_DEV_01",
+      "server_name": "ORACLE-DEV-01",
+      "ip_address": "192.168.10.13",
+      "port": 1521,
+      "environment": "DEV",
+      "active": true,
+      "cdb_services": [
+        {
+          "cdb_name": "CDB_DEV",
+          "root_service": "cdbdev.company.local"
+        }
+      ]
+    }
+  ]
+}
+

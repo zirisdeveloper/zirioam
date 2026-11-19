@@ -1,0 +1,24 @@
+# ZIRI OAM — Configuration Apache mod_rewrite
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Si le fichier ou dossier demandé existe physiquement dans /public, le servir directement
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # Sinon, rediriger vers index.php
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
+
+# Protection des fichiers cachés
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# En-têtes de sécurité additionnels
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+

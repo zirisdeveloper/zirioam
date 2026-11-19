@@ -1,0 +1,21 @@
+# Dépendances Composer
+/vendor/
+
+# Fichiers de runtime et de session
+/storage/sessions/*
+!/storage/sessions/.gitkeep
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/temporary/*
+!/storage/temporary/.gitkeep
+
+# Clés de sécurité et secrets de runtime
+*.key
+
+# Fichiers systèmes et d'éditeurs
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~

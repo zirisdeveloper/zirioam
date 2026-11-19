@@ -1,0 +1,142 @@
+/**
+ * ZIRI OAM — Thème Professionnel d'Administration Oracle
+ */
+
+:root {
+    --zirioam-primary: #0f172a;
+    --zirioam-secondary: #334155;
+    --zirioam-accent: #c73826; /* Oracle Red */
+    --zirioam-accent-hover: #a82e1e;
+    --zirioam-bg: #f8fafc;
+    --zirioam-card-bg: #ffffff;
+    --zirioam-text: #1e293b;
+    --zirioam-muted: #64748b;
+    --zirioam-border: #e2e8f0;
+}
+
+body {
+    background-color: var(--zirioam-bg);
+    color: var(--zirioam-text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Navbar */
+.zirioam-navbar {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    border-bottom: 3px solid var(--zirioam-accent);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.zirioam-brand {
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    font-size: 1.25rem;
+    color: #ffffff !important;
+}
+
+.zirioam-brand .badge-tag {
+    background-color: var(--zirioam-accent);
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+/* Server Cards */
+.server-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid var(--zirioam-border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: #ffffff;
+}
+
+.server-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+}
+
+.server-card .card-header {
+    background-color: #f1f5f9;
+    border-bottom: 1px solid var(--zirioam-border);
+    font-weight: 600;
+}
+
+/* Environment Badges */
+.badge-env-prod {
+    background-color: #ef4444;
+    color: #fff;
+}
+
+.badge-env-test {
+    background-color: #f59e0b;
+    color: #000;
+}
+
+.badge-env-dev {
+    background-color: #10b981;
+    color: #fff;
+}
+
+/* Main Content Area */
+.main-wrapper {
+    flex: 1 0 auto;
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+}
+
+/* Footer */
+.zirioam-footer {
+    flex-shrink: 0;
+    background: #0f172a;
+    color: #94a3b8;
+    padding: 1.2rem 0;
+    font-size: 0.85rem;
+    border-top: 1px solid #1e293b;
+}
+
+/* Tables */
+.table-zirioam thead th {
+    background-color: #f8fafc;
+    color: #475569;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid var(--zirioam-border);
+}
+
+/* Status Indicators */
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.status-pill-open {
+    background-color: #dcfce7;
+    color: #166534;
+}
+
+.status-pill-closed {
+    background-color: #fee2e2;
+    color: #991b1b;
+}
+
+.status-pill-mounted {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+/* DDL Matrix Toggle Checkboxes */
+.ddl-matrix-cell {
+    text-align: center;
+    vertical-align: middle;
+}
+

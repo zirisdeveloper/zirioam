@@ -1,0 +1,196 @@
+<div class="py-2">
+    <!-- En-tête -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <div>
+            <h2 class="h3 fw-bold text-dark mb-1">Matrice d'Accès : Séparation Stricte DDL / DML</h2>
+            <p class="text-muted mb-0">
+                PDB Active : <strong class="text-primary font-monospace"><?= e($activePdb ?: 'Aucune PDB sélectionnée') ?></strong> &bull;
+                Les privilèges DDL (création d'objets) et DML (données) sont hermétiquement indépendants.
+            </p>
+        </div>
+        <button type="button" class="btn btn-primary fw-semibold" data-bs-toggle="modal" data-bs-target="#grantAccessModal">
+            + Attribuer des Droits Développeur
+        </button>
+    </div>
+
+    <!-- Tableau de la Matrice d'Accès -->
+    <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover table-zirioam align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Développeur</th>
+                        <th>Schéma Cible</th>
+                        <th>Rôle DML (Données)</th>
+                        <th class="text-center">DDL CREATE</th>
+                        <th class="text-center">DDL ALTER</th>
+                        <th class="text-center">DDL DROP</th>
+                        <th>Statut</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($matrix)): ?>
+                        <tr>
+                            <td colspan="8" class="text-center py-4 text-muted">
+                                Aucune autorisation n'est actuellement configurée dans cette PDB.
+                            </td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($matrix as $m): ?>
+                            <tr>
+                                <td>
+                                    <strong class="font-monospace text-dark fs-6"><?= e($m['USERNAME']) ?></strong>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary font-monospace"><?= e($m['TARGET_SCHEMA']) ?></span>
+                                </td>
+                                <td>
+                                    <?php if (!empty($m['ROLE_NAME'])): ?>
+                                        <span class="badge bg-primary font-monospace"><?= e($m['ROLE_NAME']) ?></span>
+                                        <span class="text-muted small d-block"><?= e($m['PROFILE_TYPE']) ?></span>
+                                    <?php else: ?>
+                                        <span class="badge bg-light text-muted border">AUCUN DROIT DML</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="text-center">
+                                    <?php if ($m['CAN_DDL_CREATE'] == 1): ?>
+                                        <span class="badge bg-success">OUI</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-light text-muted border">NON</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="text-center">
+                                    <?php if ($m['CAN_DDL_ALTER'] == 1): ?>
+                                        <span class="badge bg-success">OUI</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-light text-muted border">NON</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="text-center">
+                                    <?php if ($m['CAN_DDL_DROP'] == 1): ?>
+                                        <span class="badge bg-danger">OUI</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-light text-muted border">NON</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <span class="badge bg-success"><?= e($m['STATUS']) ?></span>
+                                </td>
+                                <td class="text-end">
+                                    <form action="<?= zirioam_url('/access/' . (int)$m['ACCESS_ID'] . '/revoke') ?>" method="POST" class="d-inline">
+                                        <?= zirioam_csrf_field() ?>
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Révoquer ces accès pour <?= e($m['USERNAME']) ?> sur <?= e($m['TARGET_SCHEMA']) ?> ?">
+                                            Révoquer
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal d'Attribution d'Accès DDL / DML -->
+<div class="modal fade" id="grantAccessModal" tabindex="-1" aria-labelledby="grantAccessModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form action="<?= zirioam_url('/access') ?>" method="POST">
+                <?= zirioam_csrf_field() ?>
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title" id="grantAccessModalLabel">Configuration des Accès (PDB: <?= e($activePdb) ?>)</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label for="username" class="form-label fw-semibold">Développeur cible :</label>
+                            <select name="username" id="username" class="form-select font-monospace text-uppercase" required>
+                                <option value="">-- Choisir un développeur --</option>
+                                <?php foreach ($developers as $dev): ?>
+                                    <option value="<?= e($dev['ORACLE_USER']) ?>">
+                                        <?= e($dev['ORACLE_USER']) ?> (<?= e($dev['FULL_NAME']) ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="target_schema" class="form-label fw-semibold">Schéma applicatif :</label>
+                            <?php if (!empty($schemas)): ?>
+                                <select name="target_schema" id="target_schema" class="form-select font-monospace text-uppercase" required>
+                                    <option value="">-- Choisir un schéma --</option>
+                                    <?php foreach ($schemas as $s): ?>
+                                        <option value="<?= e($s['USERNAME']) ?>"><?= e($s['USERNAME']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            <?php else: ?>
+                                <input type="text" name="target_schema" id="target_schema" class="form-control text-uppercase font-monospace" placeholder="ex: GESTION" required>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- 1. Profil DML -->
+                    <div class="p-3 bg-light rounded border mb-4">
+                        <h6 class="fw-bold text-dark mb-2">1. Droits sur les Données (Privilèges DML) :</h6>
+                        <div class="mb-2">
+                            <label for="role_id" class="form-label small text-muted">Rôle fonctionnel associé :</label>
+                            <select name="role_id" id="role_id" class="form-select">
+                                <option value="">-- Aucun droit DML (Développeur sans accès aux données) --</option>
+                                <?php foreach ($roles as $r): ?>
+                                    <option value="<?= (int)$r['ROLE_ID'] ?>">
+                                        <?= e($r['ROLE_NAME']) ?> (<?= e($r['PROFILE_TYPE']) ?> sur <?= e($r['TARGET_SCHEMA']) ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="small text-muted">
+                            Si aucun rôle n'est sélectionné, le développeur pourra créer ou modifier des structures sans pouvoir lire ou écrire dans les données.
+                        </div>
+                    </div>
+
+                    <!-- 2. Profil DDL Contrôlé -->
+                    <div class="p-3 bg-light rounded border mb-3">
+                        <h6 class="fw-bold text-dark mb-2">2. Droits sur les Structures (Privilèges DDL Contrôlés) :</h6>
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="can_ddl_create" value="1" id="chkCreate">
+                                    <label class="form-check-label fw-semibold" for="chkCreate">
+                                        CREATE TABLE / VIEW / ...
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="can_ddl_alter" value="1" id="chkAlter">
+                                    <label class="form-check-label fw-semibold" for="chkAlter">
+                                        ALTER TABLE / ...
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="can_ddl_drop" value="1" id="chkDrop">
+                                    <label class="form-check-label fw-semibold" for="chkDrop">
+                                        DROP TABLE / ...
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="small text-muted mt-2">
+                            Ces droits s'exécutent via le moteur contrôlé <code>PKG_ZIRIOAM_DDL_ENGINE</code> sans octroi de privilèges <code>ANY</code>.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-primary fw-bold">Valider et Appliquer l'Accès</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
