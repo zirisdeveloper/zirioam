@@ -30,11 +30,12 @@
             <?php foreach ($servers as $srv): ?>
                 <?php
                     $env = strtoupper($srv['environment'] ?? 'DEV');
-                    $badgeClass = match ($env) {
-                        'PRODUCTION', 'PROD' => 'badge-env-prod',
-                        'TEST', 'RECETTE' => 'badge-env-test',
-                        default => 'badge-env-dev',
-                    };
+                    $badgeClass = 'badge-env-dev';
+                    if ($env === 'PRODUCTION' || $env === 'PROD') {
+                        $badgeClass = 'badge-env-prod';
+                    } elseif ($env === 'TEST' || $env === 'RECETTE') {
+                        $badgeClass = 'badge-env-test';
+                    }
                 ?>
                 <div class="col">
                     <div class="card h-100 server-card shadow-sm">

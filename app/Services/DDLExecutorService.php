@@ -37,12 +37,14 @@ class DDLExecutorService
         $objName = strtoupper(trim($objectName));
 
         // 1. Validation de la matrice d'accès
-        $colCheck = match ($op) {
-            'CREATE' => 'CAN_DDL_CREATE',
-            'ALTER' => 'CAN_DDL_ALTER',
-            'DROP' => 'CAN_DDL_DROP',
-            default => null,
-        };
+        $colCheck = null;
+        if ($op === 'CREATE') {
+            $colCheck = 'CAN_DDL_CREATE';
+        } elseif ($op === 'ALTER') {
+            $colCheck = 'CAN_DDL_ALTER';
+        } elseif ($op === 'DROP') {
+            $colCheck = 'CAN_DDL_DROP';
+        }
 
         if (!$colCheck) {
             return ['status' => 'REJECTED', 'error' => "Opération DDL non supportée : {$op}."];

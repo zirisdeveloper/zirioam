@@ -72,11 +72,12 @@
                         <?php foreach ($pdbs as $pdb): ?>
                             <?php
                                 $openMode = strtoupper($pdb['OPEN_MODE'] ?? 'UNKNOWN');
-                                $pillClass = match ($openMode) {
-                                    'READ WRITE' => 'status-pill-open',
-                                    'READ ONLY' => 'status-pill-mounted',
-                                    default => 'status-pill-closed',
-                                };
+                                $pillClass = 'status-pill-closed';
+                                if ($openMode === 'READ WRITE') {
+                                    $pillClass = 'status-pill-open';
+                                } elseif ($openMode === 'READ ONLY') {
+                                    $pillClass = 'status-pill-mounted';
+                                }
                                 $isCurrent = ($currentPdb ?? '') === strtoupper($pdb['NAME']);
                             ?>
                             <tr class="<?= $isCurrent ? 'table-primary' : '' ?>">

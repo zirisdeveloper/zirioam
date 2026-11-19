@@ -1,16 +1,16 @@
 {
   "servers": [
     {
-      "server_id": "ORA_PROD_01",
-      "server_name": "ORACLE-PROD-01",
-      "ip_address": "192.168.10.11",
+      "server_id": "ALGORA18",
+      "server_name": "ALGORA18",
+      "ip_address": "10.118.3.18",
       "port": 1521,
-      "environment": "PRODUCTION",
+      "environment": "PRODUCTION 18",
       "active": true,
       "cdb_services": [
         {
-          "cdb_name": "CDB_PROD",
-          "root_service": "cdbprod.company.local"
+          "cdb_name": "DEV16",
+          "root_service": "dev16"
         }
       ]
     },

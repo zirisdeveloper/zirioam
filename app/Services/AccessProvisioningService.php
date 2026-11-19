@@ -66,14 +66,15 @@ class AccessProvisioningService
                     :out_id := v_id;
                 END;";
 
-        // Ou insertion directe contrôlée
-        $normType = match ($profileType) {
-            'APP_READ' => 'READ',
-            'APP_WRITE' => 'WRITE',
-            'APP_READ_WRITE' => 'RW',
-            'APP_EXECUTE' => 'EXEC',
-            default => 'READ',
-        };
+        // Insertion directe contrôlée
+        $normType = 'READ';
+        if ($profileType === 'APP_WRITE') {
+            $normType = 'WRITE';
+        } elseif ($profileType === 'APP_READ_WRITE') {
+            $normType = 'RW';
+        } elseif ($profileType === 'APP_EXECUTE') {
+            $normType = 'EXEC';
+        }
         $roleName = "R_{$schema}_{$normType}";
 
         // Créer le rôle Oracle physique si inexistant

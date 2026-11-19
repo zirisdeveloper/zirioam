@@ -32,12 +32,14 @@ class InstallationRecoveryService
         foreach ($invalidObjects as $obj) {
             $name = $obj['OBJECT_NAME'];
             $type = $obj['OBJECT_TYPE'];
-            $compileCmd = match ($type) {
-                'PACKAGE' => "ALTER PACKAGE {$owner}.{$name} COMPILE",
-                'PACKAGE BODY' => "ALTER PACKAGE {$owner}.{$name} COMPILE BODY",
-                'VIEW' => "ALTER VIEW {$owner}.{$name} COMPILE",
-                default => "ALTER {$type} {$owner}.{$name} COMPILE",
-            };
+            $compileCmd = "ALTER {$type} {$owner}.{$name} COMPILE";
+            if ($type === 'PACKAGE') {
+                $compileCmd = "ALTER PACKAGE {$owner}.{$name} COMPILE";
+            } elseif ($type === 'PACKAGE BODY') {
+                $compileCmd = "ALTER PACKAGE {$owner}.{$name} COMPILE BODY";
+            } elseif ($type === 'VIEW') {
+                $compileCmd = "ALTER VIEW {$owner}.{$name} COMPILE";
+            }
 
             try {
                 $this->db->executeDdl($compileCmd);

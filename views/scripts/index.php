@@ -42,11 +42,12 @@
                         <?php foreach ($history as $h): ?>
                             <?php 
                                 $stat = $h['EXECUTION_STATUS'];
-                                $badgeClass = match ($stat) {
-                                    'SUCCESS' => 'bg-success',
-                                    'REJECTED' => 'bg-warning text-dark',
-                                    default => 'bg-danger',
-                                };
+                                $badgeClass = 'bg-danger';
+                                if ($stat === 'SUCCESS') {
+                                    $badgeClass = 'bg-success';
+                                } elseif ($stat === 'REJECTED') {
+                                    $badgeClass = 'bg-warning text-dark';
+                                }
                             ?>
                             <tr>
                                 <td class="font-monospace text-muted"><?= e($h['EXECUTED_AT']) ?></td>
