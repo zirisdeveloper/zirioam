@@ -78,3 +78,4 @@ class RoleHierarchyTest
         echo "  [PASS] Génération et syntaxe des privilèges d'objets validées (Résolution ORA-00942).\n";
     }
 }
+

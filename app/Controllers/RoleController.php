@@ -96,7 +96,7 @@ class RoleController extends Controller
     /**
      * Synchronise les privilèges sur toutes les tables et vues du schéma vers le rôle
      */
-    public function sync(Request $request, int $id): Response
+    public function sync(Request $request, array $params): Response
     {
         $db = $this->connectionService->getActiveConnection();
         if (!$db) return $this->redirect('/servers');
@@ -107,6 +107,7 @@ class RoleController extends Controller
             return $this->redirect('/roles');
         }
 
+        $id = (int)($params['id'] ?? 0);
         $accessService = new AccessProvisioningService($db);
         $db->switchContainer($activePdb);
 
