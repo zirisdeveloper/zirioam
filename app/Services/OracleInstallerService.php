@@ -163,6 +163,14 @@ class OracleInstallerService
                 $vaultConn->executeDdl("GRANT GRANT ANY ROLE TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
             } catch (\Throwable $e) {}
 
+            // Droits d'octroi de privilèges sur les objets applicatifs
+            try {
+                $vaultConn->executeDdl("GRANT GRANT ANY OBJECT PRIVILEGE TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+            try {
+                $vaultConn->executeDdl("GRANT SELECT ANY TABLE TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+
             // 2. Rôle Database Vault Account Manager (si configuré)
             try {
                 $vaultConn->executeDdl("GRANT DV_ACCTMGR TO C##ZIRIOAM_ADMIN CONTAINER = ALL");

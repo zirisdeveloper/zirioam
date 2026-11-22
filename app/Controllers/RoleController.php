@@ -130,7 +130,10 @@ class RoleController extends Controller
             $count = count($res['granted'] ?? []);
             $errCount = count($res['errors'] ?? []);
             if ($errCount > 0) {
-                $this->flash('warning', "{$count} objet(s) accordé(s), {$errCount} avertissement(s) pour {$roleRow['ROLE_NAME']}.");
+                $errDetails = implode(', ', array_slice($res['errors'], 0, 3));
+                $this->flash('warning', "{$count} objet(s) accordé(s), {$errCount} erreur(s) pour {$roleRow['ROLE_NAME']} : {$errDetails}");
+            } elseif ($count === 0) {
+                $this->flash('info', "Aucune table ou vue trouvée pour le schéma {$roleRow['TARGET_SCHEMA']} dans la PDB {$activePdb}.");
             } else {
                 $this->flash('success', "{$count} table(s)/vue(s) du schéma {$roleRow['TARGET_SCHEMA']} synchronisée(s) avec succès sur le rôle {$roleRow['ROLE_NAME']}.");
             }

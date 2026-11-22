@@ -8,7 +8,7 @@
       "id": "cdb_001",
       "name": "Création du compte propriétaire commun (C##ZIRIOAM_ADMIN)",
       "file": "common/001_create_common_components.sql",
-      "sha256": "F5414CD6C9E7249068ABCA884C9637885A1603B05980A700831F8CDF6E6598BB",
+      "sha256": "D8500442F14AB58546B98192ED1F7F6F2C28DE31D82DD31E1333E93B77E5192A",
       "target_container": "CDB$ROOT"
     },
     {
