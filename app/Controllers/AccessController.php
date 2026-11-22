@@ -93,7 +93,11 @@ class AccessController extends Controller
         $db = $this->connectionService->getActiveConnection();
         if (!$db) return $this->redirect('/servers');
 
-        $activePdb = $this->session->get('current_pdb');
+        $postPdb = trim((string)$request->post('pdb', ''));
+        $activePdb = (!empty($postPdb) && zirioam_is_valid_oracle_identifier($postPdb)) ? strtoupper($postPdb) : $this->session->get('current_pdb');
+        if (!empty($activePdb)) {
+            $this->session->set('current_pdb', $activePdb);
+        }
         if (empty($activePdb)) {
             $this->flash('danger', "Veuillez d'abord sélectionner une PDB active.");
             return $this->redirect('/databases');

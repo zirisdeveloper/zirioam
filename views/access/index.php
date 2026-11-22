@@ -112,6 +112,7 @@
                                 <td class="text-end">
                                     <form action="<?= zirioam_url('/access/' . (int)$m['ACCESS_ID'] . '/revoke') ?>" method="POST" class="d-inline">
                                         <?= zirioam_csrf_field() ?>
+                <input type="hidden" name="pdb" value="<?= e($activePdb) ?>">
                                         <button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Révoquer ces accès pour <?= e($m['USERNAME']) ?> sur <?= e($m['TARGET_SCHEMA']) ?> ?">
                                             Révoquer
                                         </button>
@@ -132,6 +133,7 @@
         <div class="modal-content">
             <form action="<?= zirioam_url('/access') ?>" method="POST">
                 <?= zirioam_csrf_field() ?>
+                <input type="hidden" name="pdb" value="<?= e($activePdb) ?>">
                 <div class="modal-header bg-dark text-white">
                     <h5 class="modal-title" id="grantAccessModalLabel">Configuration des Accès (PDB: <?= e($activePdb) ?>)</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>

@@ -55,12 +55,14 @@
                                     <div class="d-inline-flex gap-1">
                                         <form action="<?= zirioam_url('/roles/' . (int)$r['ROLE_ID'] . '/sync') ?>" method="POST" class="d-inline">
                                             <?= zirioam_csrf_field() ?>
+                <input type="hidden" name="pdb" value="<?= e($activePdb) ?>">
                                             <button type="submit" class="btn btn-sm btn-outline-primary font-monospace" title="Synchroniser et accorder les privilèges sur toutes les tables et vues de <?= e($r['TARGET_SCHEMA']) ?>">
                                                 🔄 Sync Objets
                                             </button>
                                         </form>
                                         <form action="<?= zirioam_url('/roles/' . (int)$r['ROLE_ID'] . '/delete') ?>" method="POST" class="d-inline" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer définitivement le rôle applicatif ' + <?= json_encode($r['ROLE_NAME']) ?> + ' de la PDB ?');">
                                             <?= zirioam_csrf_field() ?>
+                <input type="hidden" name="pdb" value="<?= e($activePdb) ?>">
                                             <button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer le rôle applicatif de la PDB">
                                                 🗑️ Supprimer
                                             </button>
@@ -82,6 +84,7 @@
         <div class="modal-content">
             <form action="<?= zirioam_url('/roles') ?>" method="POST">
                 <?= zirioam_csrf_field() ?>
+                <input type="hidden" name="pdb" value="<?= e($activePdb) ?>">
                 <div class="modal-header bg-dark text-white">
                     <h5 class="modal-title" id="createRoleModalLabel">Nouveau Rôle Fonctionnel (PDB: <?= e($activePdb) ?>)</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
