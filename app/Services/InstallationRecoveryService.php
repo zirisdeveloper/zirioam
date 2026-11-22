@@ -16,6 +16,28 @@ class InstallationRecoveryService
     }
 
     /**
+     * Récupère la liste des objets invalides pour le schéma propriétaire dans le conteneur courant
+     */
+    public function getInvalidObjects(?string $owner = null): array
+    {
+        try {
+            $currentCon = $this->db->getCurrentContainer();
+            if ($owner === null) {
+                $owner = ($currentCon === 'CDB$ROOT') ? 'C##ZIRIOAM_ADMIN' : 'ZIRIOAM_OWNER';
+            }
+
+            $sql = "SELECT OBJECT_NAME, OBJECT_TYPE, STATUS 
+                    FROM ALL_OBJECTS 
+                    WHERE OWNER = :owner AND STATUS = 'INVALID' 
+                    ORDER BY OBJECT_TYPE, OBJECT_NAME";
+
+            return $this->db->query($sql, ['owner' => strtoupper(trim($owner))]);
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
      * Tente de recompiler les packages invalides
      */
     public function recompileInvalidObjects(): array
@@ -23,10 +45,7 @@ class InstallationRecoveryService
         $currentCon = $this->db->getCurrentContainer();
         $owner = ($currentCon === 'CDB$ROOT') ? 'C##ZIRIOAM_ADMIN' : 'ZIRIOAM_OWNER';
 
-        $sql = "SELECT OBJECT_NAME, OBJECT_TYPE FROM ALL_OBJECTS 
-                WHERE OWNER = :owner AND STATUS = 'INVALID' 
-                ORDER BY OBJECT_TYPE, OBJECT_NAME";
-        $invalidObjects = $this->db->query($sql, ['owner' => $owner]);
+        $invalidObjects = $this->getInvalidObjects($owner);
 
         $results = [];
         foreach ($invalidObjects as $obj) {
