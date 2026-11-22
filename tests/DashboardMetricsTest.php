@@ -76,3 +76,4 @@ class DashboardMetricsTest
         echo "  [PASS] Distinction stricte entre rôles d'identité développeurs et rôles applicatifs validée.\n";
     }
 }
+

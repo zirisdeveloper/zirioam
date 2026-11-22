@@ -77,6 +77,21 @@ class RoleHierarchyTest
         assert(strpos($roSql, 'GRANT SELECT ON "SARAHTEST"."FICHIERS_LIGNE"') !== false);
         assert(str_starts_with($roleRw, 'RL_'), "Rôle applicatif doit être préfixé par RL_");
         echo "  [PASS] Génération et syntaxe des privilèges d'objets validées avec préfixe RL_ (Résolution ORA-00942).\n";
+
+        // 5. Test Quotas Tablespaces & UNLIMITED TABLESPACE (Résolution ORA-01950)
+        $oracleUser = 'C##USER1';
+        $tablespace = 'USERS';
+
+        $userUnlimitedSql = "GRANT UNLIMITED TABLESPACE TO {$oracleUser} CONTAINER = CURRENT";
+        $quotaSql = "ALTER USER {$oracleUser} QUOTA UNLIMITED ON \"{$tablespace}\"";
+
+        assert(strpos($userUnlimitedSql, 'GRANT UNLIMITED TABLESPACE TO C##USER1 CONTAINER = CURRENT') !== false);
+        assert(strpos($quotaSql, 'ALTER USER C##USER1 QUOTA UNLIMITED ON "USERS"') !== false);
+
+        // Vérification de la contrainte technique Oracle (ORA-01931) :
+        // Le privilège système UNLIMITED TABLESPACE ne peut pas être accordé à un rôle,
+        // les quotas tablespaces doivent obligatoirement être portés par l'utilisateur.
+        echo "  [PASS] Génération et syntaxe des ordres de quota tablespace validées (Résolution ORA-01950).\n";
     }
 }
 

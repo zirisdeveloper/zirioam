@@ -135,6 +135,24 @@ class RoleController extends Controller
                 $roleRow['ROLE_NAME'],
                 $roleRow['PROFILE_TYPE'] ?? 'APP_READ_WRITE'
             );
+
+            // Résolution ORA-01950 : Accorder automatiquement les quotas tablespace aux développeurs associés
+            try {
+                $devs = $db->query(
+                    "SELECT USERNAME FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS WHERE ROLE_ID = :rid AND STATUS = 'ACTIVE'",
+                    ['rid' => $id]
+                );
+                foreach ($devs as $d) {
+                    $u = $d['USERNAME'] ?? '';
+                    if (!empty($u)) {
+                        $normUser = strtoupper(trim($u));
+                        $baseUser = str_starts_with($normUser, 'C##') ? substr($normUser, 3) : $normUser;
+                        $localRole = 'RL_' . $baseUser;
+                        $accessService->grantTablespaceQuotaForSchema($u, $roleRow['TARGET_SCHEMA'], $localRole);
+                    }
+                }
+            } catch (\Throwable $qe) {}
+
             $count = count($res['granted'] ?? []);
             $errCount = count($res['errors'] ?? []);
             if ($errCount > 0) {

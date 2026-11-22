@@ -282,6 +282,103 @@ class AccessProvisioningService
     }
 
     /**
+     * Accorde le quota illimité sur les tablespaces du schéma cible au compte développeur.
+     * Résout l'erreur Oracle ORA-01950 (pas de privilèges sur le tablespace).
+     *
+     * Note technique Oracle : Le privilège UNLIMITED TABLESPACE et les quotas ne peuvent pas
+     * être accordés à un rôle (ORA-01931). Ils doivent obligatoirement être accordés à l'utilisateur.
+     */
+    public function grantTablespaceQuotaForSchema(string $oracleUser, string $schema, ?string $localRole = null): array
+    {
+        $oracleUser = strtoupper(trim($oracleUser));
+        $schema = strtoupper(trim($schema));
+        $granted = [];
+        $errors = [];
+
+        // 1. Tenter sur le rôle local si demandé (Oracle retournera ORA-01931 si restreint)
+        if (!empty($localRole)) {
+            $localRole = strtoupper(trim($localRole));
+            try {
+                $this->db->executeDdl("GRANT UNLIMITED TABLESPACE TO {$localRole}");
+                $granted[] = "UNLIMITED TABLESPACE to role {$localRole}";
+            } catch (\Throwable $e) {
+                // Normal sous Oracle : ORA-01931: cannot grant UNLIMITED TABLESPACE to a role
+            }
+        }
+
+        // 2. Accorder UNLIMITED TABLESPACE directement au développeur dans cette PDB
+        try {
+            $this->db->executeDdl("GRANT UNLIMITED TABLESPACE TO {$oracleUser} CONTAINER = CURRENT");
+            $granted[] = "UNLIMITED TABLESPACE to user {$oracleUser}";
+        } catch (\Throwable $e) {
+            $errors[] = "GRANT UNLIMITED TABLESPACE: " . $e->getMessage();
+        }
+
+        // 3. Découvrir tous les tablespaces associés au schéma cible
+        $tablespaces = [];
+
+        // a) Tablespace par défaut du schéma cible
+        try {
+            $userRow = $this->db->queryOne("SELECT DEFAULT_TABLESPACE FROM DBA_USERS WHERE USERNAME = :s", ['s' => $schema]);
+            if (!empty($userRow['DEFAULT_TABLESPACE'])) {
+                $tablespaces[] = strtoupper(trim($userRow['DEFAULT_TABLESPACE']));
+            }
+        } catch (\Throwable $e) {
+            try {
+                $userRow = $this->db->queryOne("SELECT DEFAULT_TABLESPACE FROM ALL_USERS WHERE USERNAME = :s", ['s' => $schema]);
+                if (!empty($userRow['DEFAULT_TABLESPACE'])) {
+                    $tablespaces[] = strtoupper(trim($userRow['DEFAULT_TABLESPACE']));
+                }
+            } catch (\Throwable $e2) {}
+        }
+
+        // b) Tablespaces contenant des tables du schéma cible
+        try {
+            $tsRows = $this->db->query("
+                SELECT DISTINCT TABLESPACE_NAME 
+                FROM DBA_TABLES 
+                WHERE OWNER = :s AND TABLESPACE_NAME IS NOT NULL
+            ", ['s' => $schema]);
+            foreach ($tsRows as $r) {
+                if (!empty($r['TABLESPACE_NAME'])) {
+                    $tablespaces[] = strtoupper(trim($r['TABLESPACE_NAME']));
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        // c) Tablespaces contenant des index du schéma cible
+        try {
+            $idxRows = $this->db->query("
+                SELECT DISTINCT TABLESPACE_NAME 
+                FROM DBA_INDEXES 
+                WHERE OWNER = :s AND TABLESPACE_NAME IS NOT NULL
+            ", ['s' => $schema]);
+            foreach ($idxRows as $ir) {
+                if (!empty($ir['TABLESPACE_NAME'])) {
+                    $tablespaces[] = strtoupper(trim($ir['TABLESPACE_NAME']));
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        // d) Tablespace 'USERS' par défaut
+        $tablespaces[] = 'USERS';
+
+        $tablespaces = array_unique(array_filter($tablespaces));
+
+        // 4. Attribuer QUOTA UNLIMITED sur chaque tablespace trouvé
+        foreach ($tablespaces as $ts) {
+            try {
+                $this->db->executeDdl("ALTER USER {$oracleUser} QUOTA UNLIMITED ON \"{$ts}\"");
+                $granted[] = "QUOTA ON \"{$ts}\"";
+            } catch (\Throwable $e) {
+                $errors[] = "QUOTA ON \"{$ts}\": " . $e->getMessage();
+            }
+        }
+
+        return ['granted' => $granted, 'errors' => $errors];
+    }
+
+    /**
      * S'assure que le rôle commun C##RL_<USER> existe dans CDB$ROOT et a CONNECT (Règles 1 & 2)
      */
     public function ensureCommonRoleInCdbRoot(string $baseUser): void
@@ -434,7 +531,12 @@ class AccessProvisioningService
             $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL");
         } catch (\Throwable $e) {}
 
-        // 6. Mettre à jour la matrice ZIRIOAM_DEVELOPER_ACCESS
+        // 6. Résolution ORA-01950 : Accorder le quota illimité sur les tablespaces du schéma cible et UNLIMITED TABLESPACE
+        try {
+            $this->grantTablespaceQuotaForSchema($oracleUser, $schema, $localRole);
+        } catch (\Throwable $e) {}
+
+        // 7. Mettre à jour la matrice ZIRIOAM_DEVELOPER_ACCESS
         $mergeSql = "MERGE INTO ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS dest
                      USING (SELECT :u AS u, :s AS s FROM DUAL) src
                      ON (dest.USERNAME = src.u AND dest.TARGET_SCHEMA = src.s)
