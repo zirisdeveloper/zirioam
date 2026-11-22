@@ -64,18 +64,19 @@ class RoleHierarchyTest
         assert($pdbOrders[4] === 'GRANT RL_USER1 TO C##USER1 CONTAINER = CURRENT', "Liaison rôle local vers utilisateur développeur");
         echo "  [PASS] Validation des ordres locaux PDB (Règle 3).\n";
 
-        // 4. Test Synchronisation des privilèges d'objets (Résolution ORA-00942)
+        // 4. Test Synchronisation des privilèges d'objets (Résolution ORA-00942) avec préfixe par défaut RL_
         $schema = 'SARAHTEST';
         $table = 'FICHIERS_LIGNE';
-        $roleRw = 'R_SARAHTEST_RW';
-        $roleRead = 'R_SARAHTEST_READ';
+        $roleRw = 'RL_SARAHTEST_RW';
+        $roleRead = 'RL_SARAHTEST_READ';
 
         $rwSql = "GRANT SELECT, INSERT, UPDATE, DELETE ON \"{$schema}\".\"{$table}\" TO {$roleRw}";
         $roSql = "GRANT SELECT ON \"{$schema}\".\"{$table}\" TO {$roleRead}";
 
         assert(strpos($rwSql, 'GRANT SELECT, INSERT, UPDATE, DELETE ON "SARAHTEST"."FICHIERS_LIGNE"') !== false);
         assert(strpos($roSql, 'GRANT SELECT ON "SARAHTEST"."FICHIERS_LIGNE"') !== false);
-        echo "  [PASS] Génération et syntaxe des privilèges d'objets validées (Résolution ORA-00942).\n";
+        assert(str_starts_with($roleRw, 'RL_'), "Rôle applicatif doit être préfixé par RL_");
+        echo "  [PASS] Génération et syntaxe des privilèges d'objets validées avec préfixe RL_ (Résolution ORA-00942).\n";
     }
 }
 

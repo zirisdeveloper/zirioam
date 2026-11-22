@@ -75,7 +75,7 @@ class AccessProvisioningService
             } elseif ($profileType === 'APP_EXECUTE') {
                 $normType = 'EXEC';
             }
-            $roleName = "R_{$schema}_{$normType}";
+            $roleName = "RL_{$schema}_{$normType}";
         }
 
         // 1. Créer le rôle Oracle physique si inexistant
@@ -108,6 +108,81 @@ class AccessProvisioningService
 
         $row = $this->db->queryOne("SELECT ROLE_ID FROM ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES WHERE ROLE_NAME = :rname", ['rname' => $roleName]);
         return (int)($row['ROLE_ID'] ?? 0);
+    }
+
+    /**
+     * Supprime un rôle applicatif Oracle de la PDB et du catalogue ZIRIOAM
+     */
+    public function deleteRole(string $pdbName, int $roleId, string $dbaUser): bool
+    {
+        $this->db->switchContainer($pdbName);
+
+        $roleRow = $this->db->queryOne(
+            "SELECT ROLE_ID, ROLE_NAME, TARGET_SCHEMA FROM ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES WHERE ROLE_ID = :rid",
+            ['rid' => $roleId]
+        );
+
+        if (!$roleRow) {
+            throw new \RuntimeException("Rôle applicatif introuvable dans la PDB {$pdbName}.");
+        }
+
+        $roleName = $roleRow['ROLE_NAME'];
+        $schema = $roleRow['TARGET_SCHEMA'];
+
+        // 1. Révoquer le rôle physique des rôles locaux des développeurs associés
+        $devs = $this->db->query(
+            "SELECT USERNAME FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS WHERE ROLE_ID = :rid",
+            ['rid' => $roleId]
+        );
+
+        foreach ($devs as $d) {
+            $user = $d['USERNAME'];
+            $normUser = strtoupper(trim($user));
+            $baseUser = str_starts_with($normUser, 'C##') ? substr($normUser, 3) : $normUser;
+            $localRole = 'RL_' . $baseUser;
+
+            try {
+                $this->db->executeDdl("REVOKE {$roleName} FROM {$localRole}");
+            } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("REVOKE {$roleName} FROM {$user}");
+            } catch (\Throwable $e) {}
+        }
+
+        // 2. Dissocier de la table ZIRIOAM_DEVELOPER_ACCESS
+        try {
+            $this->db->execute(
+                "UPDATE ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS SET ROLE_ID = NULL, UPDATED_AT = SYSTIMESTAMP WHERE ROLE_ID = :rid",
+                ['rid' => $roleId]
+            );
+        } catch (\Throwable $e) {}
+
+        // 3. Supprimer le rôle physique dans Oracle
+        try {
+            $this->db->executeDdl("DROP ROLE {$roleName}");
+        } catch (\Throwable $e) {
+            // Ignorer si déjà supprimé dans Oracle
+        }
+
+        // 4. Supprimer l'enregistrement dans ZIRIOAM_ACCESS_ROLES
+        $this->db->execute(
+            "DELETE FROM ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES WHERE ROLE_ID = :rid",
+            ['rid' => $roleId]
+        );
+
+        // 5. Audit
+        try {
+            $auditSql = "INSERT INTO ZIRIOAM_OWNER.ZIRIOAM_AUDIT_LOG 
+                         (EVENT_TIME, DBA_USER, OPERATION, TARGET_SCHEMA, TARGET_ROLE, RESULT, DETAILS)
+                         VALUES (SYSTIMESTAMP, :dba, 'DELETE_ROLE', :s, :rname, 'SUCCESS', 'Rôle applicatif supprimé')";
+            $this->db->execute($auditSql, [
+                'dba' => $dbaUser,
+                's' => $schema,
+                'rname' => $roleName,
+            ]);
+        } catch (\Throwable $e) {}
+
+        return true;
     }
 
     /**

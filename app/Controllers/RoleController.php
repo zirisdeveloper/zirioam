@@ -143,5 +143,33 @@ class RoleController extends Controller
 
         return $this->redirect('/roles');
     }
+
+    /**
+     * Supprime un rôle applicatif de la PDB et du catalogue
+     */
+    public function destroy(Request $request, array $params): Response
+    {
+        $db = $this->connectionService->getActiveConnection();
+        if (!$db) return $this->redirect('/servers');
+
+        $activePdb = $this->session->get('current_pdb');
+        if (empty($activePdb)) {
+            $this->flash('danger', "Veuillez d'abord sélectionner une PDB active.");
+            return $this->redirect('/roles');
+        }
+
+        $id = (int)($params['id'] ?? 0);
+        $dbaUser = $this->session->get('current_user', 'DBA');
+        $accessService = new AccessProvisioningService($db);
+
+        try {
+            $accessService->deleteRole($activePdb, $id, $dbaUser);
+            $this->flash('success', "Le rôle applicatif a été supprimé avec succès de la PDB {$activePdb}.");
+        } catch (\Throwable $e) {
+            $this->flash('danger', "Erreur lors de la suppression du rôle : " . $e->getMessage());
+        }
+
+        return $this->redirect('/roles');
+    }
 }
 

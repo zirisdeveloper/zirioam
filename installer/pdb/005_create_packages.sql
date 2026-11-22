@@ -81,9 +81,9 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
         v_role_name  VARCHAR2(128);
         v_role_id    NUMBER;
     BEGIN
-        -- Format normalisé du nom de rôle Oracle : R_<SCHEMA>_<TYPE_ACCES>
-        -- Exemple : R_GESTION_READ, R_GESTION_WRITE
-        v_role_name := 'R_' || UPPER(TRIM(p_target_schema)) || '_' || 
+        -- Format normalisé du nom de rôle Oracle : RL_<SCHEMA>_<TYPE_ACCES>
+        -- Exemple : RL_PAIE_RW, RL_PAIE_READ
+        v_role_name := 'RL_' || UPPER(TRIM(p_target_schema)) || '_' || 
                        CASE UPPER(TRIM(p_profile_type))
                            WHEN 'APP_READ' THEN 'READ'
                            WHEN 'APP_WRITE' THEN 'WRITE'

@@ -52,12 +52,20 @@
                                 </td>
                                 <td class="text-muted small"><?= e($r['CREATED_AT']) ?></td>
                                 <td class="text-end">
-                                    <form action="<?= zirioam_url('/roles/' . (int)$r['ROLE_ID'] . '/sync') ?>" method="POST" class="d-inline">
-                                        <?= zirioam_csrf_field() ?>
-                                        <button type="submit" class="btn btn-sm btn-outline-primary font-monospace" title="Synchroniser et accorder les privilèges sur toutes les tables et vues de <?= e($r['TARGET_SCHEMA']) ?>">
-                                            🔄 Sync Objets
-                                        </button>
-                                    </form>
+                                    <div class="d-inline-flex gap-1">
+                                        <form action="<?= zirioam_url('/roles/' . (int)$r['ROLE_ID'] . '/sync') ?>" method="POST" class="d-inline">
+                                            <?= zirioam_csrf_field() ?>
+                                            <button type="submit" class="btn btn-sm btn-outline-primary font-monospace" title="Synchroniser et accorder les privilèges sur toutes les tables et vues de <?= e($r['TARGET_SCHEMA']) ?>">
+                                                🔄 Sync Objets
+                                            </button>
+                                        </form>
+                                        <form action="<?= zirioam_url('/roles/' . (int)$r['ROLE_ID'] . '/delete') ?>" method="POST" class="d-inline" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer définitivement le rôle applicatif ' + <?= json_encode($r['ROLE_NAME']) ?> + ' de la PDB ?');">
+                                            <?= zirioam_csrf_field() ?>
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer le rôle applicatif de la PDB">
+                                                🗑️ Supprimer
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -106,7 +114,7 @@
                     <div class="mb-3">
                         <label for="custom_role_name" class="form-label fw-semibold">Nom du rôle (Optionnel) :</label>
                         <input type="text" name="custom_role_name" id="custom_role_name" class="form-control text-uppercase font-monospace" placeholder="ex: RL_PAIE_RW">
-                        <div class="form-text">Laissez vide pour générer automatiquement <code>R_&lt;SCHEMA&gt;_&lt;PROFIL&gt;</code>.</div>
+                        <div class="form-text">Laissez vide pour générer automatiquement <code>RL_&lt;SCHEMA&gt;_&lt;PROFIL&gt;</code>.</div>
                     </div>
 
                     <div class="mb-3">
@@ -115,7 +123,7 @@
                     </div>
 
                     <div class="alert alert-info small mb-0">
-                        ℹ️ Lors de la création, ZIRIOAM accorde automatiquement les privilèges (SELECT, INSERT, UPDATE, DELETE) sur toutes les tables existantes du schéma cible vers ce rôle.
+                        ℹ️ Le nom par défaut généré est automatiquement préfixé par <code>RL_</code> (ex: <code>RL_PAIE_RW</code>). ZIRIOAM accorde automatiquement les privilèges (SELECT, INSERT, UPDATE, DELETE) sur toutes les tables existantes du schéma cible vers ce rôle.
                     </div>
                 </div>
                 <div class="modal-footer">

@@ -100,6 +100,7 @@ $router->post('/developers/{id}/unlock', [\App\Controllers\DeveloperController::
 $router->get('/roles', [\App\Controllers\RoleController::class, 'index'], [$auth]);
 $router->post('/roles', [\App\Controllers\RoleController::class, 'store'], [$auth, $csrf]);
 $router->post('/roles/{id}/sync', [\App\Controllers\RoleController::class, 'sync'], [$auth, $csrf]);
+$router->post('/roles/{id}/delete', [\App\Controllers\RoleController::class, 'destroy'], [$auth, $csrf]);
 
 // Matrice d'Accès : Séparation DDL / DML (Phase 5 - Section 12)
 $router->get('/access', [\App\Controllers\AccessController::class, 'index'], [$auth]);
