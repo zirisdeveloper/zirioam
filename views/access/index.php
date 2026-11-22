@@ -20,6 +20,13 @@
             <a href="<?= zirioam_url('/databases') ?>" class="btn btn-outline-secondary">
                 🌐 Liste des PDBs
             </a>
+            <form action="<?= zirioam_url('/access/sync-all') ?>" method="POST" class="d-inline">
+                <?= zirioam_csrf_field() ?>
+                <input type="hidden" name="pdb" value="<?= e($activePdb) ?>">
+                <button type="submit" class="btn btn-outline-primary" title="Synchronise tous les objets, tables, vues et applique automatiquement les quotas tablespace illimités aux développeurs de cette PDB">
+                    🔄 Synchroniser Tout (Privilèges & Quotas)
+                </button>
+            </form>
             <button type="button" class="btn btn-primary fw-semibold" data-bs-toggle="modal" data-bs-target="#grantAccessModal">
                 + Attribuer des Droits Développeur
             </button>

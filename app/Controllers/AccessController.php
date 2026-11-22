@@ -155,5 +155,31 @@ class AccessController extends Controller
 
         return $this->redirect('/access');
     }
+
+    /**
+     * Synchronise tous les privilèges d'objets et quotas tablespace de tous les développeurs dans la PDB active
+     */
+    public function syncAll(Request $request): Response
+    {
+        $db = $this->connectionService->getActiveConnection();
+        if (!$db) return $this->redirect('/servers');
+
+        $postPdb = trim((string)$request->post('pdb', ''));
+        $activePdb = (!empty($postPdb) && zirioam_is_valid_oracle_identifier($postPdb)) ? strtoupper($postPdb) : $this->session->get('current_pdb');
+        if (empty($activePdb)) {
+            $this->flash('danger', "Veuillez d'abord sélectionner une PDB active.");
+            return $this->redirect('/access');
+        }
+
+        $accessService = new AccessProvisioningService($db);
+        try {
+            $res = $accessService->syncAllPdbAccessAndQuotas($activePdb);
+            $this->flash('success', "Synchronisation globale réussie sur {$activePdb} : {$res['synced_roles']} rôle(s) applicatif(s) synchronisé(s), {$res['updated_devs']} développeur(s) doté(s) des quotas illimités.");
+        } catch (\Throwable $e) {
+            $this->flash('danger', "Erreur lors de la synchronisation : " . $e->getMessage());
+        }
+
+        return $this->redirect('/access');
+    }
 }
 

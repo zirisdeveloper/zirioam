@@ -105,6 +105,7 @@ $router->post('/roles/{id}/delete', [\App\Controllers\RoleController::class, 'de
 // Matrice d'Accès : Séparation DDL / DML (Phase 5 - Section 12)
 $router->get('/access', [\App\Controllers\AccessController::class, 'index'], [$auth]);
 $router->post('/access', [\App\Controllers\AccessController::class, 'store'], [$auth, $csrf]);
+$router->post('/access/sync-all', [\App\Controllers\AccessController::class, 'syncAll'], [$auth, $csrf]);
 $router->post('/access/{id}/revoke', [\App\Controllers\AccessController::class, 'revoke'], [$auth, $csrf]);
 
 // Moteur DDL Contrôlé & Scripts SQL/PLSQL (Phase 5 - Section 12 & 18)

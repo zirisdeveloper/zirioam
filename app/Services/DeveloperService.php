@@ -300,6 +300,29 @@ class DeveloperService
             // Ignorer si déjà en place
         }
 
+        // 4. Positionner automatiquement les quotas de stockage illimités et UNLIMITED TABLESPACE dans toutes les PDBs ouvertes
+        try {
+            $openPdbs = $this->db->query("
+                SELECT NAME FROM V\$PDBS 
+                WHERE OPEN_MODE = 'READ WRITE' AND UPPER(NAME) NOT IN ('PDB\$SEED')
+            ");
+            $accessService = new AccessProvisioningService($this->db);
+            foreach ($openPdbs as $pdb) {
+                $pdbName = $pdb['NAME'] ?? '';
+                if (!empty($pdbName)) {
+                    try {
+                        $this->db->switchContainer($pdbName);
+                        $accessService->grantTablespaceQuotaForSchema($oracleUser, '', 'RL_' . $norm);
+                    } catch (\Throwable $pe) {}
+                }
+            }
+        } catch (\Throwable $e) {
+        } finally {
+            try {
+                $this->db->switchContainer('CDB$ROOT');
+            } catch (\Throwable $e) {}
+        }
+
         // Audit CDB
         try {
             $this->db->execute(

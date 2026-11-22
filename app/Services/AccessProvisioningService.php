@@ -308,59 +308,81 @@ class AccessProvisioningService
 
         // 2. Accorder UNLIMITED TABLESPACE directement au développeur dans cette PDB
         try {
-            $this->db->executeDdl("GRANT UNLIMITED TABLESPACE TO {$oracleUser} CONTAINER = CURRENT");
+            $this->db->executeDdl("GRANT UNLIMITED TABLESPACE TO {$oracleUser}");
             $granted[] = "UNLIMITED TABLESPACE to user {$oracleUser}";
         } catch (\Throwable $e) {
-            $errors[] = "GRANT UNLIMITED TABLESPACE: " . $e->getMessage();
+            try {
+                $this->db->executeDdl("GRANT UNLIMITED TABLESPACE TO {$oracleUser} CONTAINER = CURRENT");
+                $granted[] = "UNLIMITED TABLESPACE to user {$oracleUser}";
+            } catch (\Throwable $e2) {
+                $errors[] = "GRANT UNLIMITED TABLESPACE: " . $e2->getMessage();
+            }
         }
 
         // 3. Découvrir tous les tablespaces associés au schéma cible
         $tablespaces = [];
 
         // a) Tablespace par défaut du schéma cible
-        try {
-            $userRow = $this->db->queryOne("SELECT DEFAULT_TABLESPACE FROM DBA_USERS WHERE USERNAME = :s", ['s' => $schema]);
-            if (!empty($userRow['DEFAULT_TABLESPACE'])) {
-                $tablespaces[] = strtoupper(trim($userRow['DEFAULT_TABLESPACE']));
-            }
-        } catch (\Throwable $e) {
+        if (!empty($schema)) {
             try {
-                $userRow = $this->db->queryOne("SELECT DEFAULT_TABLESPACE FROM ALL_USERS WHERE USERNAME = :s", ['s' => $schema]);
+                $userRow = $this->db->queryOne("SELECT DEFAULT_TABLESPACE FROM DBA_USERS WHERE USERNAME = :s", ['s' => $schema]);
                 if (!empty($userRow['DEFAULT_TABLESPACE'])) {
                     $tablespaces[] = strtoupper(trim($userRow['DEFAULT_TABLESPACE']));
                 }
-            } catch (\Throwable $e2) {}
+            } catch (\Throwable $e) {
+                try {
+                    $userRow = $this->db->queryOne("SELECT DEFAULT_TABLESPACE FROM ALL_USERS WHERE USERNAME = :s", ['s' => $schema]);
+                    if (!empty($userRow['DEFAULT_TABLESPACE'])) {
+                        $tablespaces[] = strtoupper(trim($userRow['DEFAULT_TABLESPACE']));
+                    }
+                } catch (\Throwable $e2) {}
+            }
+
+            // b) Tablespaces contenant des tables du schéma cible
+            try {
+                $tsRows = $this->db->query("
+                    SELECT DISTINCT TABLESPACE_NAME 
+                    FROM DBA_TABLES 
+                    WHERE OWNER = :s AND TABLESPACE_NAME IS NOT NULL
+                ", ['s' => $schema]);
+                foreach ($tsRows as $r) {
+                    if (!empty($r['TABLESPACE_NAME'])) {
+                        $tablespaces[] = strtoupper(trim($r['TABLESPACE_NAME']));
+                    }
+                }
+            } catch (\Throwable $e) {}
+
+            // c) Tablespaces contenant des index du schéma cible
+            try {
+                $idxRows = $this->db->query("
+                    SELECT DISTINCT TABLESPACE_NAME 
+                    FROM DBA_INDEXES 
+                    WHERE OWNER = :s AND TABLESPACE_NAME IS NOT NULL
+                ", ['s' => $schema]);
+                foreach ($idxRows as $ir) {
+                    if (!empty($ir['TABLESPACE_NAME'])) {
+                        $tablespaces[] = strtoupper(trim($ir['TABLESPACE_NAME']));
+                    }
+                }
+            } catch (\Throwable $e) {}
         }
 
-        // b) Tablespaces contenant des tables du schéma cible
+        // d) Tous les tablespaces permanents utilisateur de la PDB (USERS, DATA, etc.)
         try {
-            $tsRows = $this->db->query("
-                SELECT DISTINCT TABLESPACE_NAME 
-                FROM DBA_TABLES 
-                WHERE OWNER = :s AND TABLESPACE_NAME IS NOT NULL
-            ", ['s' => $schema]);
-            foreach ($tsRows as $r) {
-                if (!empty($r['TABLESPACE_NAME'])) {
-                    $tablespaces[] = strtoupper(trim($r['TABLESPACE_NAME']));
+            $allTs = $this->db->query("
+                SELECT TABLESPACE_NAME 
+                FROM DBA_TABLESPACES 
+                WHERE CONTENTS = 'PERMANENT' 
+                  AND TABLESPACE_NAME NOT IN ('SYSTEM', 'SYSAUX')
+            ");
+            foreach ($allTs as $tsRow) {
+                if (!empty($tsRow['TABLESPACE_NAME'])) {
+                    $tablespaces[] = strtoupper(trim($tsRow['TABLESPACE_NAME']));
                 }
             }
         } catch (\Throwable $e) {}
 
-        // c) Tablespaces contenant des index du schéma cible
-        try {
-            $idxRows = $this->db->query("
-                SELECT DISTINCT TABLESPACE_NAME 
-                FROM DBA_INDEXES 
-                WHERE OWNER = :s AND TABLESPACE_NAME IS NOT NULL
-            ", ['s' => $schema]);
-            foreach ($idxRows as $ir) {
-                if (!empty($ir['TABLESPACE_NAME'])) {
-                    $tablespaces[] = strtoupper(trim($ir['TABLESPACE_NAME']));
-                }
-            }
-        } catch (\Throwable $e) {}
-
-        // d) Tablespace 'USERS' par défaut
+        // e) Tablespace 'USERS' par défaut
         $tablespaces[] = 'USERS';
 
         $tablespaces = array_unique(array_filter($tablespaces));
@@ -371,11 +393,75 @@ class AccessProvisioningService
                 $this->db->executeDdl("ALTER USER {$oracleUser} QUOTA UNLIMITED ON \"{$ts}\"");
                 $granted[] = "QUOTA ON \"{$ts}\"";
             } catch (\Throwable $e) {
-                $errors[] = "QUOTA ON \"{$ts}\": " . $e->getMessage();
+                try {
+                    $this->db->executeDdl("ALTER USER {$oracleUser} QUOTA UNLIMITED ON {$ts}");
+                    $granted[] = "QUOTA ON {$ts}";
+                } catch (\Throwable $e2) {
+                    $errors[] = "QUOTA ON {$ts}: " . $e2->getMessage();
+                }
             }
         }
 
         return ['granted' => $granted, 'errors' => $errors];
+    }
+
+    /**
+     * Synchronise tous les rôles applicatifs et tous les quotas tablespace de tous les développeurs dans une PDB
+     */
+    public function syncAllPdbAccessAndQuotas(string $pdbName): array
+    {
+        $this->db->switchContainer($pdbName);
+
+        $syncedRoles = 0;
+        $updatedDevs = 0;
+
+        // 1. Synchroniser tous les rôles applicatifs enregistrés dans cette PDB
+        $roles = [];
+        try {
+            $roles = $this->db->query("SELECT ROLE_ID, ROLE_NAME, TARGET_SCHEMA, PROFILE_TYPE FROM ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES WHERE IS_ACTIVE = 'Y'");
+        } catch (\Throwable $e) {}
+
+        foreach ($roles as $r) {
+            $this->syncSchemaPrivilegesToRole($r['TARGET_SCHEMA'], $r['ROLE_NAME'], $r['PROFILE_TYPE'] ?? 'APP_READ_WRITE');
+            $syncedRoles++;
+        }
+
+        // 2. Détecter tous les développeurs (depuis ZIRIOAM_DEVELOPER_ACCESS et ZIRIOAM_DEVELOPERS)
+        $devUsernames = [];
+        try {
+            $devs = $this->db->query("SELECT DISTINCT USERNAME FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS WHERE STATUS = 'ACTIVE'");
+            foreach ($devs as $d) {
+                if (!empty($d['USERNAME'])) $devUsernames[] = $d['USERNAME'];
+            }
+        } catch (\Throwable $e) {}
+
+        // Récupérer les utilisateurs développeurs depuis CDB$ROOT
+        try {
+            $prev = $this->db->getCurrentContainer();
+            $this->db->switchContainer('CDB$ROOT');
+            $rootDevs = $this->db->query("SELECT ORACLE_USER FROM C##ZIRIOAM_ADMIN.ZIRIOAM_DEVELOPERS WHERE STATUS = 'ACTIVE'");
+            foreach ($rootDevs as $rd) {
+                if (!empty($rd['ORACLE_USER'])) $devUsernames[] = $rd['ORACLE_USER'];
+            }
+            $this->db->switchContainer($prev);
+        } catch (\Throwable $e) {}
+
+        $devUsernames = array_unique(array_filter($devUsernames));
+
+        // 3. Pour chaque développeur, appliquer les quotas illimités et UNLIMITED TABLESPACE
+        foreach ($devUsernames as $u) {
+            $norm = strtoupper(trim($u));
+            $base = str_starts_with($norm, 'C##') ? substr($norm, 3) : $norm;
+            $localRole = 'RL_' . $base;
+
+            $this->grantTablespaceQuotaForSchema($u, '', $localRole);
+            $updatedDevs++;
+        }
+
+        return [
+            'synced_roles' => $syncedRoles,
+            'updated_devs' => $updatedDevs,
+        ];
     }
 
     /**
