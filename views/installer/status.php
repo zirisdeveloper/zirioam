@@ -1,6 +1,12 @@
 <?php
     $isInstalled = ($cdbStatus['status'] === \App\Services\InstallationDetectorService::INSTALLED);
-    $isPartial = ($cdbStatus['status'] === \App\Services\InstallationDetectorService::PARTIAL);
+    $isPartial = in_array($cdbStatus['status'], [
+        \App\Services\InstallationDetectorService::INCOMPLETE,
+        \App\Services\InstallationDetectorService::PARTIAL,
+        \App\Services\InstallationDetectorService::OUTDATED,
+        \App\Services\InstallationDetectorService::INVALID,
+        \App\Services\InstallationDetectorService::INSTALLATION_FAILED
+    ]);
     $isNotInstalled = ($cdbStatus['status'] === \App\Services\InstallationDetectorService::NOT_INSTALLED);
 ?>
 <div class="container py-5">

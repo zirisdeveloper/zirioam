@@ -12,6 +12,7 @@ class InstallationDetectorService
     public const INSTALLED = 'INSTALLED';
     public const OUTDATED = 'OUTDATED';
     public const INCOMPLETE = 'INCOMPLETE';
+    public const PARTIAL = 'INCOMPLETE';
     public const INVALID = 'INVALID';
     public const INSTALLATION_FAILED = 'INSTALLATION_FAILED';
 
