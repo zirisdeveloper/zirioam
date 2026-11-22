@@ -137,6 +137,9 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body p-4">
+                    <div class="alert alert-info py-2 px-3 small mb-3">
+                        <strong>Architecture des Rôles ZIRIOAM :</strong> L'attribution configure automatiquement le rôle local <code>RL_&lt;USER&gt;</code> dans cette PDB (CREATE SESSION + Rôles applicatifs) rattaché au rôle commun <code>C##RL_&lt;USER&gt;</code> (CONNECT), et synchronise tous les droits SELECT/DML sur les tables du schéma cible.
+                    </div>
                     <div class="row g-3 mb-4">
                         <div class="col-md-6">
                             <label for="username" class="form-label fw-semibold">Développeur cible :</label>

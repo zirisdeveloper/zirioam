@@ -133,19 +133,39 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
         p_client_ip     IN VARCHAR2 DEFAULT NULL
     ) IS
         v_oracle_user VARCHAR2(128);
+        v_norm_user   VARCHAR2(128);
+        v_common_role VARCHAR2(128);
         v_sql         VARCHAR2(1000);
     BEGIN
         v_oracle_user := get_oracle_user(p_username);
+        v_norm_user := UPPER(TRIM(p_username));
+        IF v_norm_user LIKE 'C##%' THEN
+            v_norm_user := SUBSTR(v_norm_user, 4);
+        END IF;
+        v_common_role := 'C##RL_' || v_norm_user;
 
-        -- Création stricte du compte commun avec mot de passe expiré immédiatement
-        -- IMPORTANT : AUCUN PRIVILÈGE CREATE SESSION N'EST DONNÉ ICI
+        -- 1. Création stricte du compte commun avec mot de passe expiré immédiatement
         v_sql := 'CREATE USER ' || v_oracle_user || 
                  ' IDENTIFIED BY "' || p_temp_password || '" ' ||
                  ' PASSWORD EXPIRE CONTAINER = ALL';
-        
         EXECUTE IMMEDIATE v_sql;
 
-        log_audit('PROVISION_ORACLE_ACCOUNT', v_oracle_user, 'Création compte commun sans droit session', 'SUCCESS', p_dba_user, p_client_ip);
+        -- 2. Création automatique du rôle commun associé C##RL_<USER> (Règle 1)
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE ROLE ' || v_common_role || ' CONTAINER = ALL';
+        EXCEPTION
+            WHEN OTHERS THEN
+                IF SQLCODE != -1921 THEN RAISE; END IF;
+        END;
+
+        -- 3. Attribution du rôle CONNECT au rôle commun (Règle 2)
+        EXECUTE IMMEDIATE 'GRANT CONNECT TO ' || v_common_role || ' CONTAINER = ALL';
+
+        -- 4. Attribution du rôle commun au compte utilisateur commun
+        EXECUTE IMMEDIATE 'GRANT ' || v_common_role || ' TO ' || v_oracle_user || ' CONTAINER = ALL';
+        EXECUTE IMMEDIATE 'ALTER USER ' || v_oracle_user || ' DEFAULT ROLE ALL CONTAINER = ALL';
+
+        log_audit('PROVISION_ORACLE_ACCOUNT', v_oracle_user, 'Création compte et rôle commun ' || v_common_role || ' (CONNECT)', 'SUCCESS', p_dba_user, p_client_ip);
     EXCEPTION
         WHEN OTHERS THEN
             log_audit('PROVISION_ORACLE_ACCOUNT', v_oracle_user, 'Erreur création : ' || SQLERRM, 'FAILED', p_dba_user, p_client_ip);

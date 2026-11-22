@@ -155,6 +155,14 @@ class OracleInstallerService
                 $vaultConn->executeDdl("GRANT DROP USER TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
             } catch (\Throwable $e) {}
 
+            // Gestion des rôles communs (C##RL_<USER>)
+            try {
+                $vaultConn->executeDdl("GRANT CREATE ROLE TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+            try {
+                $vaultConn->executeDdl("GRANT GRANT ANY ROLE TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+
             // 2. Rôle Database Vault Account Manager (si configuré)
             try {
                 $vaultConn->executeDdl("GRANT DV_ACCTMGR TO C##ZIRIOAM_ADMIN CONTAINER = ALL");

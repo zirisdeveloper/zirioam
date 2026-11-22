@@ -125,13 +125,54 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
         p_username   IN VARCHAR2,
         p_granted_by IN VARCHAR2
     ) IS
-        v_user VARCHAR2(128);
+        v_user        VARCHAR2(128);
+        v_norm_user   VARCHAR2(128);
+        v_common_user VARCHAR2(128);
+        v_common_role VARCHAR2(128);
+        v_local_role  VARCHAR2(128);
     BEGIN
         v_user := UPPER(TRIM(p_username));
-        -- Droit de connexion STRICTEMENT LOCAL à la PDB courante
-        EXECUTE IMMEDIATE 'GRANT CREATE SESSION TO ' || v_user;
-        EXECUTE IMMEDIATE 'GRANT ZIRIOAM_DEV_BASE_ROLE TO ' || v_user;
-        log_audit('GRANT_SESSION', v_user, NULL, 'CREATE SESSION', 'SUCCESS', 'Accès session accordé sur PDB', p_granted_by);
+        v_norm_user := v_user;
+        IF v_norm_user LIKE 'C##%' THEN
+            v_norm_user := SUBSTR(v_norm_user, 4);
+        END IF;
+        v_common_user := 'C##' || v_norm_user;
+        v_common_role := 'C##RL_' || v_norm_user;
+        v_local_role  := 'RL_' || v_norm_user;
+
+        -- Règle 3 : Création du rôle local RL_<USER> dans la PDB si inexistant
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE ROLE ' || v_local_role;
+        EXCEPTION
+            WHEN OTHERS THEN
+                IF SQLCODE != -1921 THEN RAISE; END IF;
+        END;
+
+        -- Attribution du droit CREATE SESSION au rôle local
+        EXECUTE IMMEDIATE 'GRANT CREATE SESSION TO ' || v_local_role;
+        BEGIN
+            EXECUTE IMMEDIATE 'GRANT ZIRIOAM_DEV_BASE_ROLE TO ' || v_local_role;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        -- Liaison du rôle local au rôle commun C##RL_<USER> (tolérance si restriction Oracle)
+        BEGIN
+            EXECUTE IMMEDIATE 'GRANT ' || v_local_role || ' TO ' || v_common_role || ' CONTAINER = CURRENT';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        -- Attribution du rôle local au compte développeur dans la PDB
+        BEGIN
+            EXECUTE IMMEDIATE 'GRANT ' || v_local_role || ' TO ' || v_common_user || ' CONTAINER = CURRENT';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'ALTER USER ' || v_common_user || ' DEFAULT ROLE ALL';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        log_audit('GRANT_SESSION', v_common_user, NULL, v_local_role, 'SUCCESS', 'Rôle local session configuré sur PDB', p_granted_by);
     EXCEPTION
         WHEN OTHERS THEN
             log_audit('GRANT_SESSION', v_user, NULL, 'CREATE SESSION', 'FAILED', SQLERRM, p_granted_by);
@@ -142,12 +183,37 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
         p_username   IN VARCHAR2,
         p_revoked_by IN VARCHAR2
     ) IS
-        v_user VARCHAR2(128);
+        v_user        VARCHAR2(128);
+        v_norm_user   VARCHAR2(128);
+        v_local_role  VARCHAR2(128);
+        v_common_user VARCHAR2(128);
+        v_common_role VARCHAR2(128);
     BEGIN
         v_user := UPPER(TRIM(p_username));
-        EXECUTE IMMEDIATE 'REVOKE CREATE SESSION FROM ' || v_user;
-        EXECUTE IMMEDIATE 'REVOKE ZIRIOAM_DEV_BASE_ROLE FROM ' || v_user;
-        log_audit('REVOKE_SESSION', v_user, NULL, 'CREATE SESSION', 'SUCCESS', 'Accès session révoqué sur PDB', p_revoked_by);
+        v_norm_user := v_user;
+        IF v_norm_user LIKE 'C##%' THEN
+            v_norm_user := SUBSTR(v_norm_user, 4);
+        END IF;
+        v_common_user := 'C##' || v_norm_user;
+        v_common_role := 'C##RL_' || v_norm_user;
+        v_local_role  := 'RL_' || v_norm_user;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'REVOKE CREATE SESSION FROM ' || v_local_role;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'REVOKE ' || v_local_role || ' FROM ' || v_common_user;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'REVOKE ' || v_local_role || ' FROM ' || v_common_role;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        log_audit('REVOKE_SESSION', v_user, NULL, v_local_role, 'SUCCESS', 'Accès session révoqué sur PDB', p_revoked_by);
     EXCEPTION
         WHEN OTHERS THEN
             log_audit('REVOKE_SESSION', v_user, NULL, 'CREATE SESSION', 'FAILED', SQLERRM, p_revoked_by);
@@ -159,14 +225,47 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
         p_role_name  IN VARCHAR2,
         p_granted_by IN VARCHAR2
     ) IS
-        v_user VARCHAR2(128);
-        v_role VARCHAR2(128);
+        v_user        VARCHAR2(128);
+        v_norm_user   VARCHAR2(128);
+        v_common_user VARCHAR2(128);
+        v_common_role VARCHAR2(128);
+        v_local_role  VARCHAR2(128);
+        v_role        VARCHAR2(128);
     BEGIN
         v_user := UPPER(TRIM(p_username));
-        v_role := UPPER(TRIM(p_role_name));
+        v_norm_user := v_user;
+        IF v_norm_user LIKE 'C##%' THEN
+            v_norm_user := SUBSTR(v_norm_user, 4);
+        END IF;
+        v_common_user := 'C##' || v_norm_user;
+        v_common_role := 'C##RL_' || v_norm_user;
+        v_local_role  := 'RL_' || v_norm_user;
+        v_role        := UPPER(TRIM(p_role_name));
 
-        EXECUTE IMMEDIATE 'GRANT ' || v_role || ' TO ' || v_user;
-        log_audit('GRANT_ROLE', v_user, NULL, v_role, 'SUCCESS', 'Rôle accordé', p_granted_by);
+        -- S'assurer que le rôle local existe et dispose de CREATE SESSION
+        grant_session_access(p_username, p_granted_by);
+
+        -- Règle 3 : Attribution du rôle fonctionnel au rôle local RL_<USER>
+        EXECUTE IMMEDIATE 'GRANT ' || v_role || ' TO ' || v_local_role;
+
+        -- Liaison du rôle local au rôle commun C##RL_<USER>
+        BEGIN
+            EXECUTE IMMEDIATE 'GRANT ' || v_local_role || ' TO ' || v_common_role || ' CONTAINER = CURRENT';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        -- Attribution du rôle local au compte développeur dans la PDB
+        BEGIN
+            EXECUTE IMMEDIATE 'GRANT ' || v_local_role || ' TO ' || v_common_user || ' CONTAINER = CURRENT';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'ALTER USER ' || v_common_user || ' DEFAULT ROLE ALL';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        log_audit('GRANT_ROLE', v_user, NULL, v_role, 'SUCCESS', 'Rôle accordé via ' || v_local_role, p_granted_by);
     EXCEPTION
         WHEN OTHERS THEN
             log_audit('GRANT_ROLE', v_user, NULL, v_role, 'FAILED', SQLERRM, p_granted_by);
@@ -178,14 +277,30 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
         p_role_name  IN VARCHAR2,
         p_revoked_by IN VARCHAR2
     ) IS
-        v_user VARCHAR2(128);
-        v_role VARCHAR2(128);
+        v_user       VARCHAR2(128);
+        v_norm_user  VARCHAR2(128);
+        v_local_role VARCHAR2(128);
+        v_role       VARCHAR2(128);
     BEGIN
         v_user := UPPER(TRIM(p_username));
+        v_norm_user := v_user;
+        IF v_norm_user LIKE 'C##%' THEN
+            v_norm_user := SUBSTR(v_norm_user, 4);
+        END IF;
+        v_local_role := 'RL_' || v_norm_user;
         v_role := UPPER(TRIM(p_role_name));
 
-        EXECUTE IMMEDIATE 'REVOKE ' || v_role || ' FROM ' || v_user;
-        log_audit('REVOKE_ROLE', v_user, NULL, v_role, 'SUCCESS', 'Rôle révoqué', p_revoked_by);
+        BEGIN
+            EXECUTE IMMEDIATE 'REVOKE ' || v_role || ' FROM ' || v_local_role;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'REVOKE ' || v_role || ' FROM ' || v_user;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        log_audit('REVOKE_ROLE', v_user, NULL, v_role, 'SUCCESS', 'Rôle révoqué de ' || v_local_role, p_revoked_by);
     EXCEPTION
         WHEN OTHERS THEN
             log_audit('REVOKE_ROLE', v_user, NULL, v_role, 'FAILED', SQLERRM, p_revoked_by);

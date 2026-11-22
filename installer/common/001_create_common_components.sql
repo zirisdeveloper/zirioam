@@ -69,6 +69,16 @@ BEGIN
     -- Droits de lecture du dictionnaire pour la découverte
     EXECUTE IMMEDIATE 'GRANT SELECT_CATALOG_ROLE TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
 
+    -- Droits de gestion des rôles communs (C##RL_<USER>)
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT CREATE ROLE TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT GRANT ANY ROLE TO C##ZIRIOAM_ADMIN CONTAINER = ALL';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+
     -- S'assurer que le rôle DBA et SYSTEM disposent également des droits CONTAINER = ALL
     BEGIN
         EXECUTE IMMEDIATE 'GRANT ALTER USER TO DBA CONTAINER = ALL';

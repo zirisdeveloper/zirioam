@@ -207,6 +207,7 @@ class DeveloperService
             $norm = substr($norm, 3);
         }
         $oracleUser = 'C##' . $norm;
+        $commonRole = 'C##RL_' . $norm;
 
         // Validation ou génération du mot de passe
         if (!empty($customPassword)) {
@@ -238,6 +239,20 @@ class DeveloperService
                 $sql = "CREATE USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
                 $vaultConn->executeDdl($sql);
                 $executed = true;
+
+                // Création et configuration du rôle commun associé via Vault
+                try {
+                    $vaultConn->executeDdl("CREATE ROLE {$commonRole} CONTAINER = ALL");
+                } catch (\Throwable $e) {}
+                try {
+                    $vaultConn->executeDdl("GRANT CONNECT TO {$commonRole} CONTAINER = ALL");
+                } catch (\Throwable $e) {}
+                try {
+                    $vaultConn->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
+                } catch (\Throwable $e) {}
+                try {
+                    $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
+                } catch (\Throwable $e) {}
             } catch (\Throwable $ve) {
                 // Si échec sur vaultConn, continuer vers les alternatives
             } finally {
@@ -278,16 +293,63 @@ class DeveloperService
             }
         }
 
+        // 3. S'assurer que le rôle commun C##RL_<USER> existe et dispose de CONNECT
+        try {
+            $this->ensureCommonRole($norm);
+        } catch (\Throwable $e) {
+            // Ignorer si déjà en place
+        }
+
         // Audit CDB
         try {
             $this->db->execute(
                 "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS) " .
-                "VALUES (SYSTIMESTAMP, :dba, 'CREATE_ORACLE_COMMON_USER', :target, 'Compte commun créé sans droit de session', 'SUCCESS')",
+                "VALUES (SYSTIMESTAMP, :dba, 'CREATE_ORACLE_COMMON_USER', :target, 'Compte commun et rôle {$commonRole} créés', 'SUCCESS')",
                 ['dba' => $dbaUser, 'target' => $oracleUser]
             );
         } catch (\Throwable $e) {}
 
         return $tempPassword;
+    }
+
+    /**
+     * S'assure que le rôle commun associé C##RL_<USER> existe dans CDB$ROOT,
+     * dispose du rôle CONNECT et est rattaché au compte commun (Règles 1 & 2).
+     */
+    public function ensureCommonRole(string $username): bool
+    {
+        $norm = strtoupper(trim($username));
+        if (str_starts_with($norm, 'C##')) {
+            $norm = substr($norm, 3);
+        }
+        $oracleUser = 'C##' . $norm;
+        $commonRole = 'C##RL_' . $norm;
+
+        return $this->executeInCdbRoot(function() use ($oracleUser, $commonRole) {
+            // 1. Créer le rôle commun si inexistant
+            try {
+                $this->db->executeDdl("CREATE ROLE {$commonRole} CONTAINER = ALL");
+            } catch (\Throwable $e) {
+                // Existe déjà (ORA-01921)
+            }
+
+            // 2. Accorder le privilège CONNECT au rôle commun
+            try {
+                $this->db->executeDdl("GRANT CONNECT TO {$commonRole} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+
+            // 3. Attribuer le rôle commun au compte utilisateur
+            try {
+                $this->db->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+
+            // 4. Définir comme rôle par défaut
+            try {
+                $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+
+            return true;
+        });
     }
 
     /**

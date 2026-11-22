@@ -24,12 +24,13 @@
                         <th>Description</th>
                         <th>Membres Actifs</th>
                         <th>Date Création</th>
+                        <th class="text-end">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($roles)): ?>
                         <tr>
-                            <td colspan="6" class="text-center py-4 text-muted">
+                            <td colspan="7" class="text-center py-4 text-muted">
                                 Aucun rôle fonctionnel ZIRIOAM n'est encore configuré dans cette PDB.
                             </td>
                         </tr>
@@ -50,6 +51,14 @@
                                     <span class="badge bg-primary"><?= (int)$r['MEMBER_COUNT'] ?> développeur(s)</span>
                                 </td>
                                 <td class="text-muted small"><?= e($r['CREATED_AT']) ?></td>
+                                <td class="text-end">
+                                    <form action="<?= zirioam_url('/roles/' . (int)$r['ROLE_ID'] . '/sync') ?>" method="POST" class="d-inline">
+                                        <?= zirioam_csrf_field() ?>
+                                        <button type="submit" class="btn btn-sm btn-outline-primary font-monospace" title="Synchroniser et accorder les privilèges sur toutes les tables et vues de <?= e($r['TARGET_SCHEMA']) ?>">
+                                            🔄 Sync Objets
+                                        </button>
+                                    </form>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -95,12 +104,18 @@
                     </div>
 
                     <div class="mb-3">
+                        <label for="custom_role_name" class="form-label fw-semibold">Nom du rôle (Optionnel) :</label>
+                        <input type="text" name="custom_role_name" id="custom_role_name" class="form-control text-uppercase font-monospace" placeholder="ex: RL_PAIE_RW">
+                        <div class="form-text">Laissez vide pour générer automatiquement <code>R_&lt;SCHEMA&gt;_&lt;PROFIL&gt;</code>.</div>
+                    </div>
+
+                    <div class="mb-3">
                         <label for="description" class="form-label fw-semibold">Description :</label>
                         <textarea name="description" id="description" class="form-control" rows="2" placeholder="Description de l'usage du rôle..."></textarea>
                     </div>
 
                     <div class="alert alert-info small mb-0">
-                        ℹ️ Le nom du rôle généré sera automatiquement normalisé sous la forme <code>R_&lt;SCHEMA&gt;_&lt;PROFIL&gt;</code>.
+                        ℹ️ Lors de la création, ZIRIOAM accorde automatiquement les privilèges (SELECT, INSERT, UPDATE, DELETE) sur toutes les tables existantes du schéma cible vers ce rôle.
                     </div>
                 </div>
                 <div class="modal-footer">
