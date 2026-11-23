@@ -172,19 +172,31 @@
 
                             <!-- Verrouillage / Déverrouillage Oracle -->
                             <?php if ($isLocked): ?>
-                                <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/unlock') ?>" method="POST" class="d-inline">
-                                    <?= zirioam_csrf_field() ?>
-                                    <button type="submit" class="btn btn-outline-success">
+                                <?php if (!empty($sessVault)): ?>
+                                    <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/unlock') ?>" method="POST" class="d-inline">
+                                        <?= zirioam_csrf_field() ?>
+                                        <button type="submit" class="btn btn-outline-success">
+                                            🔓 Déverrouiller le compte
+                                        </button>
+                                    </form>
+                                <?php else: ?>
+                                    <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#unlockModal">
                                         🔓 Déverrouiller le compte
                                     </button>
-                                </form>
+                                <?php endif; ?>
                             <?php else: ?>
-                                <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/lock') ?>" method="POST" class="d-inline">
-                                    <?= zirioam_csrf_field() ?>
-                                    <button type="submit" class="btn btn-outline-warning" data-confirm="Verrouiller le compte Oracle <?= e($developer['ORACLE_USER']) ?> dans toute la CDB ?">
+                                <?php if (!empty($sessVault)): ?>
+                                    <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/lock') ?>" method="POST" class="d-inline">
+                                        <?= zirioam_csrf_field() ?>
+                                        <button type="submit" class="btn btn-outline-warning" data-confirm="Verrouiller le compte Oracle <?= e($developer['ORACLE_USER']) ?> dans toute la CDB ?">
+                                            🔒 Verrouiller le compte
+                                        </button>
+                                    </form>
+                                <?php else: ?>
+                                    <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#lockModal">
                                         🔒 Verrouiller le compte
                                     </button>
-                                </form>
+                                <?php endif; ?>
                             <?php endif; ?>
 
                             <!-- Lien vers l'attribution de droits sur PDB -->
@@ -342,6 +354,114 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
                     <button type="submit" class="btn btn-danger fw-bold">Valider la réinitialisation</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Verrouillage Compte Oracle -->
+<div class="modal fade" id="lockModal" tabindex="-1" aria-labelledby="lockModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/lock') ?>" method="POST">
+                <?= zirioam_csrf_field() ?>
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title fw-bold" id="lockModalLabel">🔒 Verrouiller le Compte Oracle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3">
+                        Êtes-vous sûr de vouloir verrouiller le compte Oracle commun <strong class="font-monospace text-dark"><?= e($developer['ORACLE_USER']) ?></strong> dans toute la CDB ?
+                    </p>
+                    <div class="alert alert-secondary small py-2 mb-3">
+                        L'ordre <code>ALTER USER <?= e($developer['ORACLE_USER']) ?> ACCOUNT LOCK CONTAINER = ALL</code> sera exécuté.
+                    </div>
+
+                    <?php if (!empty($sessVault)): ?>
+                        <div class="alert alert-light border small py-2 mb-0 d-flex align-items-center">
+                            <span class="badge bg-success me-2">🛡️ Database Vault</span>
+                            <span>Session active via <strong><?= e($sessVault) ?></strong></span>
+                        </div>
+                    <?php else: ?>
+                        <div class="border rounded p-3 mb-0 bg-light">
+                            <div class="d-flex align-items-center mb-1">
+                                <span class="badge bg-secondary me-2">🛡️ Option Database Vault</span>
+                                <span class="small fw-bold text-dark">Identifiants Gestionnaire</span>
+                            </div>
+                            <div class="text-muted extra-small mb-2" style="font-size: 0.8rem;">
+                                Requis sous Database Vault car le compte SYS ne peut pas altérer directement les comptes communs.
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-sm-6">
+                                    <label class="form-label small fw-semibold mb-1">Compte Vault Manager :</label>
+                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="C##VOLTMANAGER">
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label small fw-semibold mb-1">Mot de passe Vault :</label>
+                                    <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe">
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-warning fw-bold">Confirmer le Verrouillage</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Déverrouillage Compte Oracle -->
+<div class="modal fade" id="unlockModal" tabindex="-1" aria-labelledby="unlockModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/unlock') ?>" method="POST">
+                <?= zirioam_csrf_field() ?>
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title fw-bold" id="unlockModalLabel">🔓 Déverrouiller le Compte Oracle</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3">
+                        Déverrouiller l'accès pour le compte Oracle commun <strong class="font-monospace text-dark"><?= e($developer['ORACLE_USER']) ?></strong> dans toute la CDB ?
+                    </p>
+                    <div class="alert alert-secondary small py-2 mb-3">
+                        L'ordre <code>ALTER USER <?= e($developer['ORACLE_USER']) ?> ACCOUNT UNLOCK CONTAINER = ALL</code> sera exécuté.
+                    </div>
+
+                    <?php if (!empty($sessVault)): ?>
+                        <div class="alert alert-light border small py-2 mb-0 d-flex align-items-center">
+                            <span class="badge bg-success me-2">🛡️ Database Vault</span>
+                            <span>Session active via <strong><?= e($sessVault) ?></strong></span>
+                        </div>
+                    <?php else: ?>
+                        <div class="border rounded p-3 mb-0 bg-light">
+                            <div class="d-flex align-items-center mb-1">
+                                <span class="badge bg-secondary me-2">🛡️ Option Database Vault</span>
+                                <span class="small fw-bold text-dark">Identifiants Gestionnaire</span>
+                            </div>
+                            <div class="text-muted extra-small mb-2" style="font-size: 0.8rem;">
+                                Requis sous Database Vault car le compte SYS ne peut pas altérer directement les comptes communs.
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-sm-6">
+                                    <label class="form-label small fw-semibold mb-1">Compte Vault Manager :</label>
+                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="C##VOLTMANAGER">
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label small fw-semibold mb-1">Mot de passe Vault :</label>
+                                    <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe">
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success fw-bold">Confirmer le Déverrouillage</button>
                 </div>
             </form>
         </div>

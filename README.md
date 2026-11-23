@@ -107,4 +107,4 @@ php tests/run_tests.php
 ---
 
 ## 👥 Licence & Droits
-Tous droits réservés &bull; Développé pour les environnements de production d'entreprise Oracle Database 19c.
+Tous droits réservés &bull; Développé par Mahfoud Bouziri pour les environnements de production d'entreprise Oracle Database 19c.

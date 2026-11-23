@@ -270,12 +270,23 @@ class DeveloperController extends Controller
         }
 
         $dbaUser = $this->session->get('current_user', 'DBA');
+        $vaultUser = trim((string)$request->post('vault_user', ''));
+        $vaultPassword = (string)$request->post('vault_password', '');
+        if (!empty($vaultUser) && !empty($vaultPassword)) {
+            $this->session->set('vault_user', strtoupper($vaultUser));
+            $this->session->set('vault_password', $vaultPassword);
+        }
 
         try {
-            $devService->lockOracleAccount($developer['USERNAME'], $dbaUser);
-            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été verrouillé.");
+            $devService->lockOracleAccount(
+                $developer['USERNAME'],
+                $dbaUser,
+                !empty($vaultUser) ? $vaultUser : null,
+                !empty($vaultPassword) ? $vaultPassword : null
+            );
+            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été verrouillé avec succès dans toute la CDB.");
         } catch (\Throwable $e) {
-            $this->flash('danger', "Erreur lors du verrouillage : " . $e->getMessage());
+            $this->flash('danger', $e->getMessage());
         }
 
         return $this->redirect("/developers/{$id}");
@@ -299,12 +310,23 @@ class DeveloperController extends Controller
         }
 
         $dbaUser = $this->session->get('current_user', 'DBA');
+        $vaultUser = trim((string)$request->post('vault_user', ''));
+        $vaultPassword = (string)$request->post('vault_password', '');
+        if (!empty($vaultUser) && !empty($vaultPassword)) {
+            $this->session->set('vault_user', strtoupper($vaultUser));
+            $this->session->set('vault_password', $vaultPassword);
+        }
 
         try {
-            $devService->unlockOracleAccount($developer['USERNAME'], $dbaUser);
-            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été déverrouillé.");
+            $devService->unlockOracleAccount(
+                $developer['USERNAME'],
+                $dbaUser,
+                !empty($vaultUser) ? $vaultUser : null,
+                !empty($vaultPassword) ? $vaultPassword : null
+            );
+            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été déverrouillé avec succès.");
         } catch (\Throwable $e) {
-            $this->flash('danger', "Erreur lors du déverrouillage : " . $e->getMessage());
+            $this->flash('danger', $e->getMessage());
         }
 
         return $this->redirect("/developers/{$id}");

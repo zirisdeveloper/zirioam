@@ -378,14 +378,24 @@ class DeveloperService
     /**
      * Verrouille le compte Oracle commun
      */
-    public function lockOracleAccount(string $username, string $dbaUser): bool
-    {
+    public function lockOracleAccount(
+        string $username,
+        string $dbaUser,
+        ?string $explicitVaultUser = null,
+        ?string $explicitVaultPassword = null
+    ): bool {
         $norm = strtoupper(trim($username));
         $oracleUser = str_starts_with($norm, 'C##') ? $norm : 'C##' . $norm;
 
-        // Tenter via connexion Vault si disponible
+        // 1. Tenter via connexion Vault (si explicite ou en session)
         $connService = new \App\Services\OracleConnectionService();
-        $vaultConn = $connService->getVaultConnection();
+        $vaultConn = null;
+        if (!empty($explicitVaultUser) && !empty($explicitVaultPassword)) {
+            $vaultConn = $connService->createCustomConnection($explicitVaultUser, $explicitVaultPassword);
+        } else {
+            $vaultConn = $connService->getVaultConnection();
+        }
+
         if ($vaultConn) {
             try {
                 $curCon = $vaultConn->getCurrentContainer();
@@ -394,12 +404,26 @@ class DeveloperService
                 }
                 $vaultConn->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK CONTAINER = ALL");
                 $vaultConn->close();
+
+                // Audit CDB
+                try {
+                    $this->db->execute(
+                        "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS) " .
+                        "VALUES (SYSTIMESTAMP, :dba, 'LOCK_ACCOUNT', :target, 'Compte verrouillé via Vault Manager', 'SUCCESS')",
+                        ['dba' => $dbaUser, 'target' => $oracleUser]
+                    );
+                } catch (\Throwable $e) {}
+
                 return true;
             } catch (\Throwable $ve) {
                 $vaultConn->close();
+                if (!empty($explicitVaultUser)) {
+                    throw $ve;
+                }
             }
         }
 
+        // 2. Si non exécuté via Vault, tenter la connexion standard
         $currentCon = $this->db->getCurrentContainer();
         if ($currentCon !== 'CDB$ROOT') {
             $this->db->switchContainer('CDB$ROOT');
@@ -410,23 +434,45 @@ class DeveloperService
                 "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS.lock_account(:username, :dba); END;",
                 ['username' => $norm, 'dba' => $dbaUser]
             );
-        } catch (\Throwable $e) {
-            $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK CONTAINER = ALL");
+            return true;
+        } catch (\Throwable $pkgErr) {
+            try {
+                $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK CONTAINER = ALL");
+                return true;
+            } catch (\Throwable $ddlErr) {
+                $errMsg = $ddlErr->getMessage();
+                if (strpos($errMsg, 'ORA-01031') !== false || strpos($errMsg, 'ORA-474') !== false) {
+                    throw new \RuntimeException(
+                        "Échec de verrouillage du compte Oracle : ORA-01031 (Database Vault actif ou privilèges insuffisants). " .
+                        "Veuillez renseigner les identifiants du compte habilité (C##VOLTMANAGER) pour modifier le compte."
+                    );
+                }
+                throw $ddlErr;
+            }
         }
-        return true;
     }
 
     /**
      * Déverrouille le compte Oracle commun
      */
-    public function unlockOracleAccount(string $username, string $dbaUser): bool
-    {
+    public function unlockOracleAccount(
+        string $username,
+        string $dbaUser,
+        ?string $explicitVaultUser = null,
+        ?string $explicitVaultPassword = null
+    ): bool {
         $norm = strtoupper(trim($username));
         $oracleUser = str_starts_with($norm, 'C##') ? $norm : 'C##' . $norm;
 
-        // Tenter via connexion Vault si disponible
+        // 1. Tenter via connexion Vault (si explicite ou en session)
         $connService = new \App\Services\OracleConnectionService();
-        $vaultConn = $connService->getVaultConnection();
+        $vaultConn = null;
+        if (!empty($explicitVaultUser) && !empty($explicitVaultPassword)) {
+            $vaultConn = $connService->createCustomConnection($explicitVaultUser, $explicitVaultPassword);
+        } else {
+            $vaultConn = $connService->getVaultConnection();
+        }
+
         if ($vaultConn) {
             try {
                 $curCon = $vaultConn->getCurrentContainer();
@@ -435,12 +481,26 @@ class DeveloperService
                 }
                 $vaultConn->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = ALL");
                 $vaultConn->close();
+
+                // Audit CDB
+                try {
+                    $this->db->execute(
+                        "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS) " .
+                        "VALUES (SYSTIMESTAMP, :dba, 'UNLOCK_ACCOUNT', :target, 'Compte déverrouillé via Vault Manager', 'SUCCESS')",
+                        ['dba' => $dbaUser, 'target' => $oracleUser]
+                    );
+                } catch (\Throwable $e) {}
+
                 return true;
             } catch (\Throwable $ve) {
                 $vaultConn->close();
+                if (!empty($explicitVaultUser)) {
+                    throw $ve;
+                }
             }
         }
 
+        // 2. Si non exécuté via Vault, tenter la connexion standard
         $currentCon = $this->db->getCurrentContainer();
         if ($currentCon !== 'CDB$ROOT') {
             $this->db->switchContainer('CDB$ROOT');
@@ -451,10 +511,22 @@ class DeveloperService
                 "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS.unlock_account(:username, :dba); END;",
                 ['username' => $norm, 'dba' => $dbaUser]
             );
-        } catch (\Throwable $e) {
-            $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = ALL");
+            return true;
+        } catch (\Throwable $pkgErr) {
+            try {
+                $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = ALL");
+                return true;
+            } catch (\Throwable $ddlErr) {
+                $errMsg = $ddlErr->getMessage();
+                if (strpos($errMsg, 'ORA-01031') !== false || strpos($errMsg, 'ORA-474') !== false) {
+                    throw new \RuntimeException(
+                        "Échec de déverrouillage du compte Oracle : ORA-01031 (Database Vault actif ou privilèges insuffisants). " .
+                        "Veuillez renseigner les identifiants du compte habilité (C##VOLTMANAGER) pour modifier le compte."
+                    );
+                }
+                throw $ddlErr;
+            }
         }
-        return true;
     }
 
     /**
