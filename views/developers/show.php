@@ -172,31 +172,13 @@
 
                             <!-- Verrouillage / Déverrouillage Oracle -->
                             <?php if ($isLocked): ?>
-                                <?php if (!empty($sessVault)): ?>
-                                    <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/unlock') ?>" method="POST" class="d-inline">
-                                        <?= zirioam_csrf_field() ?>
-                                        <button type="submit" class="btn btn-outline-success">
-                                            🔓 Déverrouiller le compte
-                                        </button>
-                                    </form>
-                                <?php else: ?>
-                                    <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#unlockModal">
-                                        🔓 Déverrouiller le compte
-                                    </button>
-                                <?php endif; ?>
+                                <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#unlockModal">
+                                    🔓 Déverrouiller le compte
+                                </button>
                             <?php else: ?>
-                                <?php if (!empty($sessVault)): ?>
-                                    <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/lock') ?>" method="POST" class="d-inline">
-                                        <?= zirioam_csrf_field() ?>
-                                        <button type="submit" class="btn btn-outline-warning" data-confirm="Verrouiller le compte Oracle <?= e($developer['ORACLE_USER']) ?> dans toute la CDB ?">
-                                            🔒 Verrouiller le compte
-                                        </button>
-                                    </form>
-                                <?php else: ?>
-                                    <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#lockModal">
-                                        🔒 Verrouiller le compte
-                                    </button>
-                                <?php endif; ?>
+                                <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#lockModal">
+                                    🔒 Verrouiller le compte
+                                </button>
                             <?php endif; ?>
 
                             <!-- Lien vers l'attribution de droits sur PDB -->
@@ -372,19 +354,36 @@
                 </div>
                 <div class="modal-body">
                     <p class="mb-3">
-                        Êtes-vous sûr de vouloir verrouiller le compte Oracle commun <strong class="font-monospace text-dark"><?= e($developer['ORACLE_USER']) ?></strong> dans toute la CDB ?
+                        Êtes-vous sûr de vouloir verrouiller le compte Oracle commun <strong class="font-monospace text-dark"><?= e($developer['ORACLE_USER']) ?></strong> ?
                     </p>
                     <div class="alert alert-secondary small py-2 mb-3">
-                        L'ordre <code>ALTER USER <?= e($developer['ORACLE_USER']) ?> ACCOUNT LOCK CONTAINER = ALL</code> sera exécuté.
+                        Le compte sera verrouillé dans <code>CDB$ROOT</code> et le privilège <code>CREATE SESSION</code> sera révoqué dans toutes les PDBs ouvertes pour interdire immédiatement toute connexion.
                     </div>
 
                     <?php if (!empty($sessVault)): ?>
-                        <div class="alert alert-light border small py-2 mb-0 d-flex align-items-center">
-                            <span class="badge bg-success me-2">🛡️ Database Vault</span>
-                            <span>Session active via <strong><?= e($sessVault) ?></strong></span>
+                        <div class="alert alert-light border small py-2 mb-3">
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-success me-2">🛡️ Database Vault</span>
+                                <span>Session active via <strong><?= e($sessVault) ?></strong></span>
+                                <a class="ms-auto text-decoration-none small text-primary" data-bs-toggle="collapse" href="#collapseLockVault" role="button">
+                                    Changer &darr;
+                                </a>
+                            </div>
+                            <div class="collapse mt-2 pt-2 border-top" id="collapseLockVault">
+                                <div class="row g-2">
+                                    <div class="col-sm-6">
+                                        <label class="form-label extra-small text-muted mb-0">Utilisateur Vault :</label>
+                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" value="<?= e($sessVault) ?>">
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label extra-small text-muted mb-0">Nouveau mot de passe :</label>
+                                        <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Laisser vide si inchangé">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     <?php else: ?>
-                        <div class="border rounded p-3 mb-0 bg-light">
+                        <div class="border rounded p-3 mb-3 bg-light">
                             <div class="d-flex align-items-center mb-1">
                                 <span class="badge bg-secondary me-2">🛡️ Option Database Vault</span>
                                 <span class="small fw-bold text-dark">Identifiants Gestionnaire</span>
@@ -426,19 +425,36 @@
                 </div>
                 <div class="modal-body">
                     <p class="mb-3">
-                        Déverrouiller l'accès pour le compte Oracle commun <strong class="font-monospace text-dark"><?= e($developer['ORACLE_USER']) ?></strong> dans toute la CDB ?
+                        Déverrouiller l'accès pour le compte Oracle commun <strong class="font-monospace text-dark"><?= e($developer['ORACLE_USER']) ?></strong> ?
                     </p>
                     <div class="alert alert-secondary small py-2 mb-3">
-                        L'ordre <code>ALTER USER <?= e($developer['ORACLE_USER']) ?> ACCOUNT UNLOCK CONTAINER = ALL</code> sera exécuté.
+                        Le compte sera déverrouillé dans <code>CDB$ROOT</code> et le privilège <code>CREATE SESSION</code> sera réactivé dans toutes les PDBs ouvertes.
                     </div>
 
                     <?php if (!empty($sessVault)): ?>
-                        <div class="alert alert-light border small py-2 mb-0 d-flex align-items-center">
-                            <span class="badge bg-success me-2">🛡️ Database Vault</span>
-                            <span>Session active via <strong><?= e($sessVault) ?></strong></span>
+                        <div class="alert alert-light border small py-2 mb-3">
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-success me-2">🛡️ Database Vault</span>
+                                <span>Session active via <strong><?= e($sessVault) ?></strong></span>
+                                <a class="ms-auto text-decoration-none small text-primary" data-bs-toggle="collapse" href="#collapseUnlockVault" role="button">
+                                    Changer &darr;
+                                </a>
+                            </div>
+                            <div class="collapse mt-2 pt-2 border-top" id="collapseUnlockVault">
+                                <div class="row g-2">
+                                    <div class="col-sm-6">
+                                        <label class="form-label extra-small text-muted mb-0">Utilisateur Vault :</label>
+                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" value="<?= e($sessVault) ?>">
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label extra-small text-muted mb-0">Nouveau mot de passe :</label>
+                                        <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Laisser vide si inchangé">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     <?php else: ?>
-                        <div class="border rounded p-3 mb-0 bg-light">
+                        <div class="border rounded p-3 mb-3 bg-light">
                             <div class="d-flex align-items-center mb-1">
                                 <span class="badge bg-secondary me-2">🛡️ Option Database Vault</span>
                                 <span class="small fw-bold text-dark">Identifiants Gestionnaire</span>

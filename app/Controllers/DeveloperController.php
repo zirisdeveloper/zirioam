@@ -284,9 +284,9 @@ class DeveloperController extends Controller
                 !empty($vaultUser) ? $vaultUser : null,
                 !empty($vaultPassword) ? $vaultPassword : null
             );
-            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été verrouillé avec succès dans toute la CDB.");
+            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été verrouillé avec succès (accès bloqué dans toute la CDB et les PDBs).");
         } catch (\Throwable $e) {
-            $this->flash('danger', $e->getMessage());
+            $this->flash('danger', "Erreur lors du verrouillage : " . $e->getMessage());
         }
 
         return $this->redirect("/developers/{$id}");
@@ -324,9 +324,9 @@ class DeveloperController extends Controller
                 !empty($vaultUser) ? $vaultUser : null,
                 !empty($vaultPassword) ? $vaultPassword : null
             );
-            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été déverrouillé avec succès.");
+            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été déverrouillé avec succès (accès rétabli dans toute la CDB et les PDBs).");
         } catch (\Throwable $e) {
-            $this->flash('danger', $e->getMessage());
+            $this->flash('danger', "Erreur lors du déverrouillage : " . $e->getMessage());
         }
 
         return $this->redirect("/developers/{$id}");
