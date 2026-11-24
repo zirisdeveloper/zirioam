@@ -170,31 +170,6 @@
                             </button>
                         </div>
                     </div>
-
-                    <!-- Options d'administration facultatives -->
-                    <div class="mt-3">
-                        <a class="small text-muted text-decoration-none" data-bs-toggle="collapse" href="#collapseSelfAdmin" role="button">
-                            ⚙️ Options d'authentification avancées (facultatif si session ZIRIOAM active) &darr;
-                        </a>
-                        <div class="collapse mt-2 pt-2 border-top" id="collapseSelfAdmin">
-                            <div class="border rounded p-2 bg-light">
-                                <span class="badge bg-secondary mb-1">🛡️ Compte d'administration Oracle</span>
-                                <div class="text-muted extra-small mb-2" style="font-size: 0.8rem;">
-                                    À renseigner si aucune session d'administration n'est déjà ouverte sur ZIRIOAM.
-                                </div>
-                                <div class="row g-2">
-                                    <div class="col-sm-6">
-                                        <label class="form-label extra-small text-muted mb-0">Utilisateur admin :</label>
-                                        <input type="text" name="admin_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="SYS ou C##VOLTMANAGER">
-                                    </div>
-                                    <div class="col-sm-6">
-                                        <label class="form-label extra-small text-muted mb-0">Mot de passe admin :</label>
-                                        <input type="password" name="admin_password" class="form-control form-control-sm" placeholder="Laisser vide si session active">
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <div class="modal-footer bg-light py-2 px-4 d-flex justify-content-between">
