@@ -365,12 +365,58 @@ class DeveloperController extends Controller
 
         try {
             $devService->stripCdbRootSession($developer['USERNAME']);
-            $this->flash('success', "Le privilège CREATE SESSION et le rôle CONNECT ont été révoqués dans CDB\$ROOT pour {$developer['ORACLE_USER']}. Le compte ne peut plus se connecter à la CDB racine (accès limité aux seules PDBs autorisées).");
+            $this->flash('success', "Le privilège CREATE SESSION et le rôle CONNECT ont été révoqués dans CDB\$ROOT pour {$developer['ORACLE_USER']}.");
         } catch (\Throwable $e) {
             $this->flash('danger', "Erreur lors de la révocation CDB : " . $e->getMessage());
         }
 
         return $this->redirect("/developers/{$id}");
+    }
+
+    /**
+     * Accorde le privilège CREATE SESSION dans CDB$ROOT au rôle commun d'un développeur (via C##RL_<USER>)
+     */
+    public function grantCdbSession(Request $request, array $params): Response
+    {
+        $db = $this->connectionService->getActiveConnection();
+        if (!$db) return $this->redirect('/servers');
+
+        $devService = new DeveloperService($db);
+        $id = (int)($params['id'] ?? 0);
+        $developer = $devService->getDeveloperById($id);
+
+        if (!$developer) {
+            $this->flash('danger', "Développeur introuvable.");
+            return $this->redirect('/developers');
+        }
+
+        try {
+            $devService->grantCdbRootSession($developer['USERNAME']);
+            $this->flash('success', "Le privilège CREATE SESSION a été accordé au rôle C##RL_{$developer['USERNAME']} dans CDB\$ROOT. Le développeur {$developer['ORACLE_USER']} peut désormais renouveler son mot de passe en toute autonomie via /UpdPwd.");
+        } catch (\Throwable $e) {
+            $this->flash('danger', "Erreur lors de l'attribution du privilège CDB : " . $e->getMessage());
+        }
+
+        return $this->redirect("/developers/{$id}");
+    }
+
+    /**
+     * Accorde le privilège CREATE SESSION dans CDB$ROOT à l'ensemble des développeurs
+     */
+    public function grantAllCdbSession(Request $request): Response
+    {
+        $db = $this->connectionService->getActiveConnection();
+        if (!$db) return $this->redirect('/servers');
+
+        $devService = new DeveloperService($db);
+        try {
+            $count = $devService->grantCdbSessionToAllDevelopers();
+            $this->flash('success', "Le privilège CREATE SESSION dans CDB\$ROOT a été accordé avec succès à {$count} rôle(s) développeurs (C##RL_*). Tous les développeurs peuvent renouveler leur mot de passe de manière autonome via /UpdPwd.");
+        } catch (\Throwable $e) {
+            $this->flash('danger', "Erreur lors de la mise à jour globale des rôles CDB : " . $e->getMessage());
+        }
+
+        return $this->redirect('/developers');
     }
 }
 

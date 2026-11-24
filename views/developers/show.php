@@ -191,21 +191,30 @@
                                 Gérer les droits sur les PDB &rarr;
                             </a>
 
-                            <!-- Blocage Connexion CDB$ROOT (Isolation stricte PDB) -->
-                            <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/strip-cdb') ?>" method="POST" class="d-inline" onsubmit="return confirm('Confirmer la révocation du privilège CREATE SESSION dans CDB$ROOT ? Le développeur ne pourra se connecter qu\'aux PDBs autorisées.');">
+                            <!-- Accorder Session CDB$ROOT au rôle commun (Self-service mot de passe /UpdPwd) -->
+                            <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/grant-cdb') ?>" method="POST" class="d-inline" onsubmit="return confirm('Accorder le privilège CREATE SESSION dans CDB$ROOT au rôle C##RL_<?= e($developer['USERNAME']) ?> ? Cela permet au développeur de renouveler son mot de passe en autonomie via /UpdPwd.');">
                                 <?= zirioam_csrf_field() ?>
-                                <button type="submit" class="btn btn-outline-secondary" title="Révoquer CREATE SESSION dans CDB$ROOT (isolation stricte PDB)">
+                                <button type="submit" class="btn btn-outline-success" title="Accorder CREATE SESSION dans CDB$ROOT via le rôle commun C##RL_ (Renouvellement autonome de mot de passe)">
+                                    🔓 Accorder Session CDB$ROOT (C##RL_*)
+                                </button>
+                            </form>
+
+                            <!-- Blocage / Révocation Connexion CDB$ROOT -->
+                            <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/strip-cdb') ?>" method="POST" class="d-inline" onsubmit="return confirm('Confirmer la révocation du privilège CREATE SESSION dans CDB$ROOT ? Le développeur ne pourra plus changer son mot de passe en autonomie via /UpdPwd.');">
+                                <?= zirioam_csrf_field() ?>
+                                <button type="submit" class="btn btn-outline-secondary" title="Révoquer CREATE SESSION dans CDB$ROOT">
                                     🛡️ Bloquer Accès CDB$ROOT
                                 </button>
                             </form>
                         </div>
 
                         <div class="alert alert-secondary small mb-0 border">
-                            <h6 class="fw-bold mb-1">Règles fondamentales Oracle :</h6>
+                            <h6 class="fw-bold mb-1">Règles fondamentales Oracle & Mots de Passe :</h6>
                             <ul class="mb-0 ps-3">
-                                <li><strong>Isolation stricte PDB :</strong> Le développeur ne dispose pas du privilège <code>CREATE SESSION</code> dans <code>CDB$ROOT</code>. La connexion n'est autorisée que localement dans les PDBs où un profil d'accès lui est explicitement attribué.</li>
+                                <li><strong>Autonomie mot de passe (/UpdPwd) :</strong> Le privilège <code>CREATE SESSION</code> dans <code>CDB$ROOT</code> est attribué au rôle commun <code>C##RL_&lt;USER&gt;</code>. Cela permet au développeur de se connecter à la racine pour renouveler son mot de passe de façon autonome sans nécessiter de comptes administrateurs stockés sur le serveur.</li>
+                                <li><strong>Isolation applicative :</strong> Dans <code>CDB$ROOT</code>, le développeur ne dispose d'aucun droit sur les schémas applicatifs (ni CREATE TABLE ni DBA). L'accès aux données reste strictement confiné aux PDBs autorisées.</li>
                                 <li>La réinitialisation applique un mot de passe immédiatement actif et déverrouille le compte dans toutes les PDBs (évite l'erreur <code>ORA-65162</code>).</li>
-                                <li>Aucun mot de passe n'est enregistré dans les bases ZIRIOAM.</li>
+                                <li>Aucun mot de passe n'est enregistré dans les fichiers ou bases de données du serveur ZIRIOAM.</li>
                             </ul>
                         </div>
                     <?php endif; ?>

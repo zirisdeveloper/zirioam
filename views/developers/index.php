@@ -9,6 +9,12 @@
             <a href="<?= zirioam_url('/developers/create') ?>" class="btn btn-primary fw-semibold">
                 + Nouveau Développeur
             </a>
+            <form action="<?= zirioam_url('/developers/grant-all-cdb') ?>" method="POST" class="d-inline" onsubmit="return confirm('Accorder le privilège CREATE SESSION dans CDB$ROOT aux rôles communs (C##RL_*) de tous les développeurs ? Cela leur permettra de renouveler leur mot de passe en autonomie via /UpdPwd.');">
+                <?= zirioam_csrf_field() ?>
+                <button type="submit" class="btn btn-outline-success fw-semibold" title="Activer l'accès CDB$ROOT aux rôles communs développeurs pour permettre le renouvellement autonome de mot de passe">
+                    ⚡ Activer Session CDB$ROOT pour Tous
+                </button>
+            </form>
             <a href="<?= zirioam_url('/developers/export') ?>" class="btn btn-outline-dark fw-semibold">
                 📥 EXPORTER JSON
             </a>

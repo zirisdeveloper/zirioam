@@ -102,6 +102,8 @@ $router->post('/developers/{id}/password-reset', [\App\Controllers\PasswordContr
 $router->post('/developers/{id}/lock', [\App\Controllers\DeveloperController::class, 'lockAccount'], [$auth, $csrf]);
 $router->post('/developers/{id}/unlock', [\App\Controllers\DeveloperController::class, 'unlockAccount'], [$auth, $csrf]);
 $router->post('/developers/{id}/strip-cdb', [\App\Controllers\DeveloperController::class, 'stripCdbSession'], [$auth, $csrf]);
+$router->post('/developers/{id}/grant-cdb', [\App\Controllers\DeveloperController::class, 'grantCdbSession'], [$auth, $csrf]);
+$router->post('/developers/grant-all-cdb', [\App\Controllers\DeveloperController::class, 'grantAllCdbSession'], [$auth, $csrf]);
 
 // Gestion des Rôles Fonctionnels Oracle (Phase 5 - Section 13)
 $router->get('/roles', [\App\Controllers\RoleController::class, 'index'], [$auth]);

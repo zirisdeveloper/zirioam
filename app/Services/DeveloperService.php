@@ -262,25 +262,13 @@ class DeveloperService
                     $vaultConn->executeDdl("CREATE ROLE {$commonRole} CONTAINER = ALL");
                 } catch (\Throwable $e) {}
                 try {
+                    $vaultConn->executeDdl("GRANT CREATE SESSION TO {$commonRole} CONTAINER = ALL");
+                } catch (\Throwable $e) {}
+                try {
                     $vaultConn->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
                 } catch (\Throwable $e) {}
                 try {
                     $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
-                } catch (\Throwable $e) {}
-
-                // RÈGLE STRICTE ZIRIOAM : Aucun privilège CONNECT ou CREATE SESSION n'est accordé dans CDB$ROOT !
-                // Le développeur ne recevra CREATE SESSION que localement dans les PDBs autorisées lors de l'attribution de droits.
-                try {
-                    $vaultConn->executeDdl("REVOKE CONNECT FROM {$commonRole} CONTAINER = ALL");
-                } catch (\Throwable $e) {}
-                try {
-                    $vaultConn->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = ALL");
-                } catch (\Throwable $e) {}
-                try {
-                    $vaultConn->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = CURRENT");
-                } catch (\Throwable $e) {}
-                try {
-                    $vaultConn->executeDdl("REVOKE CONNECT FROM {$oracleUser} CONTAINER = ALL");
                 } catch (\Throwable $e) {}
             } catch (\Throwable $ve) {
                 // Si échec sur vaultConn, continuer vers les alternatives
@@ -366,22 +354,12 @@ class DeveloperService
                 // Existe déjà (ORA-01921)
             }
 
-            // 2. RÈGLE STRICTE ZIRIOAM : Aucun privilège CONNECT ou CREATE SESSION n'est accordé dans CDB$ROOT !
+            // 2. Accorder le privilège CREATE SESSION au rôle commun C##RL_<USER>
+            // Permet la connexion en CDB$ROOT pour que le développeur puisse renouveler son mot de passe
+            // de façon autonome sans nécessiter de comptes administrateurs stockés sur le serveur
             try {
-                $this->db->executeDdl("REVOKE CONNECT FROM {$commonRole} CONTAINER = ALL");
+                $this->db->executeDdl("GRANT CREATE SESSION TO {$commonRole} CONTAINER = ALL");
             } catch (\Throwable $e) {}
-            try {
-                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = ALL");
-            } catch (\Throwable $e) {}
-            try {
-                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = CURRENT");
-            } catch (\Throwable $e2) {}
-            try {
-                $this->db->executeDdl("REVOKE CONNECT FROM {$oracleUser} CONTAINER = ALL");
-            } catch (\Throwable $e) {}
-            try {
-                $this->db->executeDdl("REVOKE CONNECT FROM {$oracleUser} CONTAINER = CURRENT");
-            } catch (\Throwable $e2) {}
 
             // 3. Attribuer le rôle commun au compte utilisateur
             try {
@@ -393,11 +371,33 @@ class DeveloperService
                 $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
             } catch (\Throwable $e) {}
 
-            // Règle ZIRIOAM : Nettoyer immédiatement tout droit de connexion résiduel dans CDB$ROOT
-            $this->stripCdbRootSession($norm);
-
             return true;
         });
+    }
+
+    /**
+     * Accorde explicitement le droit CREATE SESSION dans CDB$ROOT au rôle commun d'un développeur
+     */
+    public function grantCdbRootSession(string $username): bool
+    {
+        return $this->ensureCommonRole($username);
+    }
+
+    /**
+     * Accorde le droit CREATE SESSION dans CDB$ROOT à l'ensemble des développeurs actifs
+     */
+    public function grantCdbSessionToAllDevelopers(): int
+    {
+        $developers = $this->getDevelopers();
+        $count = 0;
+        foreach ($developers as $dev) {
+            try {
+                if ($this->grantCdbRootSession($dev['USERNAME'])) {
+                    $count++;
+                }
+            } catch (\Throwable $e) {}
+        }
+        return $count;
     }
 
     /**

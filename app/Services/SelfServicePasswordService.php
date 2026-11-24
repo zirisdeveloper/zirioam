@@ -79,10 +79,61 @@ class SelfServicePasswordService
         $lastException = null;
 
         // -------------------------------------------------------------
-        // STRATÉGIE A : Appel OCI natif oci_password_change()
-        // Permet de tenter le changement direct au niveau OCI si supporté
+        // STRATÉGIE 1 : Connexion directe développeur à CDB$ROOT (via C##RL_<USER>)
+        // & Exécution autonome de ALTER USER ... IDENTIFIED BY ... REPLACE ...
+        // Le développeur bénéficie du privilège CREATE SESSION dans CDB$ROOT
+        // accordé via son rôle commun C##RL_<USER>. Cette méthode ne nécessite
+        // aucun compte administrateur ni mot de passe stocké sur le serveur !
         // -------------------------------------------------------------
-        if (function_exists('oci_password_change')) {
+        if (function_exists('oci_connect')) {
+            $userConn = @oci_connect($oracleUser, $oldPassword, $easyConnect);
+            if ($userConn) {
+                $sql = "ALTER USER {$oracleUser} IDENTIFIED BY \"{$newPassword}\" REPLACE \"{$oldPassword}\"";
+                $stmt = @oci_parse($userConn, $sql);
+                if ($stmt && @oci_execute($stmt, OCI_COMMIT_ON_SUCCESS)) {
+                    $executed = true;
+                    $executionMethod = 'USER_DIRECT_REPLACE_IN_CDB_ROOT';
+                } else {
+                    $ociErr = oci_error($stmt ?: $userConn);
+                    $eCode = (int)($ociErr['code'] ?? 0);
+                    $eMsg = $ociErr['message'] ?? '';
+                    if ($eCode === 28003) {
+                        @oci_close($userConn);
+                        throw new \InvalidArgumentException(
+                            "Le nouveau mot de passe ne respecte pas les critères de complexité définis par Oracle : " . $eMsg
+                        );
+                    }
+                    if ($eCode === 28007) {
+                        @oci_close($userConn);
+                        throw new \InvalidArgumentException(
+                            "Le mot de passe a déjà été utilisé récemment et ne peut pas être réutilisé (ORA-28007)."
+                        );
+                    }
+                    $lastException = new \RuntimeException($eMsg ?: "Erreur Oracle lors de ALTER USER {$eCode}");
+                }
+                @oci_close($userConn);
+            } else {
+                $ociErr = oci_error();
+                $errCode = (int)($ociErr['code'] ?? 0);
+                $errMsg = $ociErr['message'] ?? '';
+
+                if ($errCode === 1017) {
+                    throw new \InvalidArgumentException(
+                        "Échec d'authentification : L'ancien mot de passe saisi est incorrect pour le compte {$oracleUser}."
+                    );
+                }
+                // Si ORA-28001 (mot de passe expiré), oci_connect échoue mais oci_password_change peut le renouveler ci-dessous
+                if ($errCode !== 28001) {
+                    $lastException = new \RuntimeException($errMsg ?: "Erreur de connexion Oracle {$errCode}");
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // STRATÉGIE 2 : Appel OCI natif oci_password_change()
+        // Particulièrement efficace lorsque le mot de passe est expiré (ORA-28001)
+        // -------------------------------------------------------------
+        if (!$executed && function_exists('oci_password_change')) {
             $conn = @oci_password_change($easyConnect, $oracleUser, $oldPassword, $newPassword);
             if ($conn) {
                 if (is_resource($conn)) {
@@ -110,19 +161,16 @@ class SelfServicePasswordService
                         "Le mot de passe a déjà été utilisé récemment et ne peut pas être réutilisé (ORA-28007)."
                     );
                 }
-                // Si l'erreur est ORA-01045 ou ORA-65040, le compte commun n'a pas le droit d'altérer son mot de passe
-                // directement en root ou depuis la PDB -> Basculer impérativement vers la stratégie d'administration !
                 $lastException = new \RuntimeException($errMsg ?: "Erreur Oracle {$errCode}");
             }
         }
 
         // -------------------------------------------------------------
-        // STRATÉGIE B : Relais via session d'administration active ZIRIOAM
+        // STRATÉGIE 3 : Relais administratif de secours (Session DBA ou Admin explicite)
         // -------------------------------------------------------------
         if (!$executed) {
             $connService = new OracleConnectionService();
             $activeConn = $connService->getActiveConnection();
-            $sessionServer = App::getInstance()->getSession()->get('current_server');
 
             // 1. Validation obligatoire de l'ancien mot de passe pour prévenir toute usurpation
             $credentialsValid = false;
@@ -148,7 +196,7 @@ class SelfServicePasswordService
                 $credentialsValid = true;
             }
 
-            // 2. Si des identifiants d'administration explicites ont été saisis dans le modal
+            // 2. Si des identifiants d'administration explicites ont été saisis
             if ($credentialsValid && !empty($adminUser) && !empty($adminPassword)) {
                 $aMode = strtoupper(trim($adminUser)) === 'SYS' ? 'SYSDBA' : 'NORMAL';
                 try {
@@ -200,7 +248,7 @@ class SelfServicePasswordService
                 }
             }
 
-            // 3. Si échec ou droits insuffisants sous Database Vault, tenter via connexion Vault Manager
+            // 4. Si échec ou droits insuffisants sous Database Vault, tenter via connexion Vault Manager
             if (!$executed && $credentialsValid) {
                 try {
                     $vaultConn = $connService->getVaultConnection();
@@ -222,46 +270,13 @@ class SelfServicePasswordService
                     $lastException = $ve;
                 }
             }
-
-            // 4. Stratégie C : Compte de service d'administration configuré (ou C##ZIRIOAM_ADMIN)
-            if (!$executed && $credentialsValid) {
-                $serviceUser = $server['service_user'] ?? $server['admin_user'] ?? 'C##ZIRIOAM_ADMIN';
-                $servicePass = $server['service_password'] ?? $server['admin_password'] ?? 'ZiriOam_Admin2026#Setup';
-                $serviceMode = $server['service_mode'] ?? 'NORMAL';
-
-                try {
-                    $serviceConn = new \App\Database\OracleConnection(
-                        $host,
-                        $port,
-                        $rootService,
-                        $serviceUser,
-                        $servicePass,
-                        $serviceMode
-                    );
-
-                    try {
-                        $curCon = $serviceConn->getCurrentContainer();
-                        if ($curCon !== 'CDB$ROOT') {
-                            $serviceConn->switchContainer('CDB$ROOT');
-                        }
-                        $sql = "ALTER USER {$oracleUser} IDENTIFIED BY \"{$newPassword}\" ACCOUNT UNLOCK CONTAINER = ALL";
-                        $serviceConn->executeDdl($sql);
-                        $executed = true;
-                        $executionMethod = 'SERVICE_ACCOUNT';
-                    } finally {
-                        $serviceConn->close();
-                    }
-                } catch (\Throwable $se) {
-                    // Si compte de service absent ou mot de passe modifié
-                }
-            }
         }
 
         if (!$executed) {
             $msg = $lastException ? $lastException->getMessage() : "Impossible de modifier le mot de passe.";
             throw new \RuntimeException(
                 "Échec de la mise à jour du mot de passe : " . $msg . 
-                " (Assurez-vous qu'une session d'administration Oracle est active ou que le service ZIRIOAM est configuré sur cette base)."
+                " (Assurez-vous que le rôle C##RL_{$norm} dispose du privilège CREATE SESSION dans CDB\$ROOT en cliquant sur 'Accorder Session CDB\$ROOT' sur la fiche du développeur)."
             );
         }
 
