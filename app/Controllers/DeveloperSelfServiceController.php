@@ -51,6 +51,8 @@ class DeveloperSelfServiceController extends Controller
         $oldPassword = (string)$request->post('old_password', '');
         $newPassword = (string)$request->post('new_password', '');
         $confirmPassword = (string)$request->post('confirm_password', '');
+        $adminUser = trim((string)$request->post('admin_user', ''));
+        $adminPassword = (string)$request->post('admin_password', '');
         $clientIp = $request->header('X-Forwarded-For') ?? $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 
         try {
@@ -60,7 +62,9 @@ class DeveloperSelfServiceController extends Controller
                 $oldPassword,
                 $newPassword,
                 $confirmPassword,
-                $clientIp
+                $clientIp,
+                !empty($adminUser) ? $adminUser : null,
+                !empty($adminPassword) ? $adminPassword : null
             );
 
             $this->flash('success', "Votre mot de passe pour {$result['oracle_user']} a été mis à jour avec succès sur l'ensemble des conteneurs de la base {$result['server_name']}. Vous pouvez dès à présent vous connecter avec votre nouveau mot de passe.");
@@ -73,3 +77,4 @@ class DeveloperSelfServiceController extends Controller
         return $this->redirect('/UpdPwd');
     }
 }
+
