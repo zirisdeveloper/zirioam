@@ -45,36 +45,25 @@ class PasswordResetService
             $tempPassword = zirioam_generate_secure_password(14);
         }
 
-        // 1. Tenter en priorité via le compte Vault Manager si disponible (indispensable sous Database Vault)
-        $connService = new \App\Services\OracleConnectionService();
-        $vaultConn = null;
-
-        if (!empty($explicitVaultUser) && !empty($explicitVaultPassword)) {
-            $vaultConn = $connService->createCustomConnection($explicitVaultUser, $explicitVaultPassword);
-        } else {
-            $vaultConn = $connService->getVaultConnection();
-        }
-
         $executed = false;
         $lastException = null;
 
-        if ($vaultConn) {
-            try {
-                $curCon = $vaultConn->getCurrentContainer();
-                if ($curCon !== 'CDB$ROOT') {
-                    $vaultConn->switchContainer('CDB$ROOT');
-                }
-                $sql = "ALTER USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
-                $vaultConn->executeDdl($sql);
-                $executed = true;
-            } catch (\Throwable $ve) {
-                $lastException = $ve;
-            } finally {
-                $vaultConn->close();
+        // 1. Tenter EN PRIORITÉ via la connexion d'administration active (SYS / DBA)
+        // Note architecturale : Sur la plupart des configurations (y compris avec Database Vault),
+        // le compte SYS dispose des droits pour exécuter ALTER USER ... IDENTIFIED BY ... PASSWORD EXPIRE.
+        try {
+            $currentCon = $this->db->getCurrentContainer();
+            if ($currentCon !== 'CDB$ROOT') {
+                $this->db->switchContainer('CDB$ROOT');
             }
+            $sql = "ALTER USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
+            $this->db->executeDdl($sql);
+            $executed = true;
+        } catch (\Throwable $sysErr) {
+            $lastException = $sysErr;
         }
 
-        // 2. Si non exécuté via Vault, tenter Mode A : Package PL/SQL C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS
+        // 2. Si échec DDL direct, tenter via le package PL/SQL C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS
         if (!$executed) {
             try {
                 $currentCon = $this->db->getCurrentContainer();
@@ -95,26 +84,46 @@ class PasswordResetService
             }
         }
 
-        // 3. Si toujours non exécuté, tenter Mode B : Ordre DDL direct avec la connexion courante
-        if (!$executed) {
+        // 3. Si échec de la connexion standard (ex: ORA-01031 sous Database Vault)
+        // Tenter via la connexion Vault Manager si des identifiants ont été fournis
+        if (!$executed && (!empty($explicitVaultPassword) || !empty($explicitVaultUser))) {
+            $connService = new \App\Services\OracleConnectionService();
             try {
-                $currentCon = $this->db->getCurrentContainer();
-                if ($currentCon !== 'CDB$ROOT') {
-                    $this->db->switchContainer('CDB$ROOT');
+                $vUser = !empty($explicitVaultUser) ? $explicitVaultUser : 'C##VOLTMANAGER';
+                $vaultConn = null;
+                if (!empty($explicitVaultPassword)) {
+                    $vaultConn = $connService->createCustomConnection($vUser, $explicitVaultPassword);
+                } else {
+                    $vaultConn = $connService->getVaultConnection();
                 }
-                $sql = "ALTER USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
-                $this->db->executeDdl($sql);
-                $executed = true;
-            } catch (\Throwable $ddlErr) {
-                $errMsg = $ddlErr->getMessage();
-                if (strpos($errMsg, 'ORA-01031') !== false || strpos($errMsg, 'ORA-474') !== false) {
-                    throw new \RuntimeException(
-                        "Échec de réinitialisation : ORA-01031: Privilèges insuffisants (Database Vault actif). " .
-                        "Veuillez renseigner les identifiants du compte habilité (C##VOLTMANAGER) dans la fenêtre de réinitialisation."
-                    );
+
+                if ($vaultConn) {
+                    try {
+                        $curCon = $vaultConn->getCurrentContainer();
+                        if ($curCon !== 'CDB$ROOT') {
+                            $vaultConn->switchContainer('CDB$ROOT');
+                        }
+                        $sql = "ALTER USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
+                        $vaultConn->executeDdl($sql);
+                        $executed = true;
+                    } finally {
+                        $vaultConn->close();
+                    }
                 }
-                throw $ddlErr;
+            } catch (\Throwable $ve) {
+                $lastException = $ve;
             }
+        }
+
+        if (!$executed) {
+            $errMsg = $lastException ? $lastException->getMessage() : 'Erreur inconnue';
+            if (strpos($errMsg, 'ORA-01031') !== false || strpos($errMsg, 'ORA-474') !== false) {
+                throw new \RuntimeException(
+                    "Échec de réinitialisation : ORA-01031: Privilèges insuffisants (Database Vault actif). " .
+                    "Le compte SYS ne peut pas modifier ce mot de passe. Veuillez renseigner le compte habilité (C##VOLTMANAGER) via les options avancées."
+                );
+            }
+            throw new \RuntimeException("Échec de réinitialisation : " . $errMsg);
         }
 
         // Journalisation dans la table de log ZIRIOAM

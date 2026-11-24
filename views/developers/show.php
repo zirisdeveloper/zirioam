@@ -299,49 +299,29 @@
                         </div>
                     </div>
 
-                    <?php if ($hasActiveVault): ?>
-                        <div class="alert alert-light border small py-2 mb-3">
-                            <div class="d-flex align-items-center">
-                                <span class="badge bg-success me-2">🛡️ Database Vault</span>
-                                <span>Session active via <strong><?= e($sessVaultUser) ?></strong></span>
-                                <a class="ms-auto text-decoration-none small text-primary" data-bs-toggle="collapse" href="#collapseRstVault" role="button">
-                                    Changer &darr;
-                                </a>
-                            </div>
-                            <div class="collapse mt-2 pt-2 border-top" id="collapseRstVault">
+                    <div class="mb-3">
+                        <a class="small text-muted text-decoration-none" data-bs-toggle="collapse" href="#collapseRstVault" role="button">
+                            ⚙️ Option Database Vault (facultatif si SYS est autorisé) &darr;
+                        </a>
+                        <div class="collapse mt-2 pt-2 border-top" id="collapseRstVault">
+                            <div class="border rounded p-2 bg-light">
+                                <span class="badge bg-secondary mb-1">🛡️ Compte Vault Manager</span>
+                                <div class="text-muted extra-small mb-2" style="font-size: 0.8rem;">
+                                    À renseigner uniquement si Database Vault bloque la réinitialisation directe par SYS.
+                                </div>
                                 <div class="row g-2">
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Utilisateur Vault :</label>
-                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" value="<?= e($sessVaultUser) ?>">
+                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="<?= e($sessVaultUser ?: 'C##VOLTMANAGER') ?>">
                                     </div>
                                     <div class="col-sm-6">
-                                        <label class="form-label extra-small text-muted mb-0">Nouveau mot de passe :</label>
-                                        <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Laisser vide si inchangé">
+                                        <label class="form-label extra-small text-muted mb-0">Mot de passe Vault :</label>
+                                        <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Laisser vide si non utilisé">
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    <?php else: ?>
-                        <div class="border rounded p-3 mb-3 bg-light">
-                            <div class="d-flex align-items-center mb-1">
-                                <span class="badge bg-secondary me-2">🛡️ Database Vault</span>
-                                <span class="small fw-bold text-dark">Identifiants Gestionnaire (Requis sous Database Vault)</span>
-                            </div>
-                            <div class="text-muted extra-small mb-2" style="font-size: 0.8rem;">
-                                Sous Database Vault, le compte SYS n'a pas les droits pour modifier les comptes communs. Renseignez le compte habilité (ex: <code>C##VOLTMANAGER</code>).
-                            </div>
-                            <div class="row g-2">
-                                <div class="col-sm-6">
-                                    <label class="form-label small fw-semibold mb-1">Compte Vault Manager :</label>
-                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="<?= e($sessVaultUser ?: 'C##VOLTMANAGER') ?>">
-                                </div>
-                                <div class="col-sm-6">
-                                    <label class="form-label small fw-semibold mb-1">Mot de passe Vault :</label>
-                                    <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe C##VOLTMANAGER">
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
+                    </div>
 
                     <div class="alert alert-warning small mb-0 py-2">
                         ⚠️ La clause <strong>PASSWORD EXPIRE CONTAINER = ALL</strong> sera appliquée. Le mot de passe vous sera révélé <strong>une seule fois</strong> après validation.
