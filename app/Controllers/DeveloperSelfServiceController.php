@@ -76,5 +76,33 @@ class DeveloperSelfServiceController extends Controller
 
         return $this->redirect('/UpdPwd');
     }
+
+    /**
+     * Vérifie les identifiants actuels du développeur en AJAX avant d'ouvrir le modal de changement
+     */
+    public function verify(Request $request): Response
+    {
+        $serverId = trim((string)$request->post('server_id', ''));
+        $username = trim((string)$request->post('username', ''));
+        $currentPassword = (string)$request->post('current_password', '');
+
+        try {
+            $result = $this->pwdService->verifyCredentials($serverId, $username, $currentPassword);
+            $response = new Response();
+            return $response->json($result);
+        } catch (\InvalidArgumentException $e) {
+            $response = new Response();
+            return $response->json([
+                'valid' => false,
+                'message' => $e->getMessage(),
+            ], 400);
+        } catch (\Throwable $e) {
+            $response = new Response();
+            return $response->json([
+                'valid' => false,
+                'message' => "Erreur lors de la vérification : " . $e->getMessage(),
+            ], 500);
+        }
+    }
 }
 

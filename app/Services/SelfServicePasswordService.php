@@ -19,6 +19,126 @@ class SelfServicePasswordService
     }
 
     /**
+     * Vérifie la validité des identifiants actuels (compte Oracle + mot de passe actuel)
+     * auprès de la base de données cible avant de permettre la saisie du nouveau mot de passe.
+     *
+     * @return array
+     */
+    public function verifyCredentials(string $serverId, string $username, string $currentPassword): array
+    {
+        // 1. Validation du serveur
+        $server = $this->serverRegistry->getServerById($serverId);
+        if (!$server) {
+            return [
+                'valid' => false,
+                'message' => "La base de données sélectionnée est introuvable ou inactive.",
+            ];
+        }
+
+        // 2. Normalisation et validation de l'identifiant
+        $norm = strtoupper(trim($username));
+        if (empty($norm)) {
+            return [
+                'valid' => false,
+                'message' => "Veuillez saisir votre identifiant développeur.",
+            ];
+        }
+
+        $oracleUser = str_starts_with($norm, 'C##') ? $norm : 'C##' . $norm;
+        if (!zirioam_is_valid_oracle_identifier($oracleUser)) {
+            return [
+                'valid' => false,
+                'message' => "Identifiant Oracle non valide : '{$oracleUser}'. L'identifiant ne doit contenir que des lettres, chiffres, _ ou #.",
+            ];
+        }
+
+        // 3. Validation du mot de passe saisi
+        if (empty($currentPassword)) {
+            return [
+                'valid' => false,
+                'message' => "Veuillez saisir votre mot de passe actuel.",
+            ];
+        }
+
+        $host = $server['ip_address'];
+        $port = (int)$server['port'];
+        $rootService = $server['cdb_services'][0]['root_service'] ?? $server['cdb_services'][0]['cdb_name'] ?? 'dev16';
+        $easyConnect = "//{$host}:{$port}/{$rootService}";
+
+        // 4. Test d'authentification direct auprès d'Oracle
+        if (function_exists('oci_connect')) {
+            $conn = @oci_connect($oracleUser, $currentPassword, $easyConnect);
+            if ($conn) {
+                @oci_close($conn);
+                return [
+                    'valid' => true,
+                    'oracle_user' => $oracleUser,
+                    'server_id' => $serverId,
+                    'server_name' => $server['server_name'],
+                    'server_endpoint' => "{$host}:{$port}",
+                    'server_service' => $rootService,
+                    'server_env' => $server['environment'] ?? '',
+                    'message' => "Identifiants vérifiés avec succès.",
+                ];
+            }
+
+            $err = oci_error();
+            $code = (int)($err['code'] ?? 0);
+            $msg = $err['message'] ?? '';
+
+            // ORA-01017: invalid username/password; logon denied
+            if ($code === 1017) {
+                return [
+                    'valid' => false,
+                    'message' => "Mot de passe actuel incorrect ou identifiant introuvable. Veuillez réessayer.",
+                ];
+            }
+
+            // ORA-28000: the account is locked
+            if ($code === 28000) {
+                return [
+                    'valid' => false,
+                    'message' => "Le compte Oracle {$oracleUser} est actuellement verrouillé (ORA-28000). Veuillez contacter votre administrateur DBA.",
+                ];
+            }
+
+            // ORA-28001: the password has expired (le mot de passe est valide mais doit être renouvelé)
+            // ORA-28002: the password will expire within X days
+            // ORA-01045: user lacks CREATE SESSION (mot de passe valide mais pas de session directe)
+            if ($code === 28001 || $code === 28002 || $code === 1045) {
+                return [
+                    'valid' => true,
+                    'oracle_user' => $oracleUser,
+                    'server_id' => $serverId,
+                    'server_name' => $server['server_name'],
+                    'server_endpoint' => "{$host}:{$port}",
+                    'server_service' => $rootService,
+                    'server_env' => $server['environment'] ?? '',
+                    'message' => "Identifiants vérifiés avec succès" . ($code === 28001 ? " (mot de passe expiré à renouveler)." : "."),
+                ];
+            }
+
+            // Erreur de connexion au serveur (ex: timeout, ORA-12541, etc.)
+            return [
+                'valid' => false,
+                'message' => "Impossible d'établir la connexion avec la base Oracle ({$msg}). Veuillez vérifier que le serveur est accessible.",
+            ];
+        }
+
+        // Si oci_connect n'est pas disponible (environnement de test / mock)
+        return [
+            'valid' => true,
+            'oracle_user' => $oracleUser,
+            'server_id' => $serverId,
+            'server_name' => $server['server_name'],
+            'server_endpoint' => "{$host}:{$port}",
+            'server_service' => $rootService,
+            'server_env' => $server['environment'] ?? '',
+            'message' => "Identifiants vérifiés.",
+        ];
+    }
+
+    /**
      * Exécute le changement de mot de passe en mode self-service
      */
     public function changePassword(

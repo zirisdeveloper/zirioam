@@ -11,6 +11,9 @@
                 </p>
             </div>
             <div class="card-body p-4 pt-3">
+                <!-- Zone d'affichage des alertes d'authentification préalable -->
+                <div id="pre-auth-alert-container"></div>
+
                 <form id="pre-auth-form" onsubmit="event.preventDefault(); handleOpenModal();">
                     <!-- 1. Choix de la base de données (servers.json) -->
                     <div class="mb-3">
@@ -69,7 +72,7 @@
                     </div>
 
                     <!-- Bouton Continuer -->
-                    <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold shadow-sm">
+                    <button type="submit" id="btn-continue-preauth" class="btn btn-primary btn-lg w-100 fw-bold shadow-sm">
                         Continuer vers le changement de mot de passe &rarr;
                     </button>
                 </form>
@@ -198,20 +201,46 @@ function toggleInputVisibility(inputId, btn) {
     }
 }
 
-function handleOpenModal() {
+function showAlert(message, type = 'danger') {
+    const alertContainer = document.getElementById('pre-auth-alert-container');
+    if (!alertContainer) return;
+    const icon = type === 'danger' ? '⛔' : (type === 'warning' ? '⚠️' : 'ℹ️');
+    alertContainer.innerHTML = `
+        <div class="alert alert-${type} alert-dismissible fade show d-flex align-items-center mb-3 shadow-sm" role="alert">
+            <span class="fs-4 me-2">${icon}</span>
+            <div class="flex-grow-1 fw-semibold small">${escapeHtml(message)}</div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fermer"></button>
+        </div>
+    `;
+    alertContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.innerText = text;
+    return div.innerHTML;
+}
+
+async function handleOpenModal() {
     const selServer = document.getElementById('sel_server_id');
     const inputUser = document.getElementById('input_username');
     const inputPwd = document.getElementById('input_current_password');
+    const btnSubmit = document.getElementById('btn-continue-preauth');
+    const alertContainer = document.getElementById('pre-auth-alert-container');
+
+    if (alertContainer) {
+        alertContainer.innerHTML = '';
+    }
 
     if (!selServer.value) {
-        alert("Veuillez sélectionner une base de données dans la liste.");
+        showAlert("Veuillez sélectionner une base de données dans la liste.", "warning");
         selServer.focus();
         return;
     }
 
     let userVal = inputUser.value.trim().toUpperCase();
     if (!userVal) {
-        alert("Veuillez saisir votre nom d'utilisateur développeur.");
+        showAlert("Veuillez saisir votre nom d'utilisateur développeur.", "warning");
         inputUser.focus();
         return;
     }
@@ -221,43 +250,79 @@ function handleOpenModal() {
     }
 
     if (!inputPwd.value) {
-        alert("Veuillez saisir votre mot de passe actuel.");
+        showAlert("Veuillez saisir votre mot de passe actuel.", "warning");
         inputPwd.focus();
         return;
     }
 
-    // Extraction des attributs du serveur sélectionné
-    const selectedOption = selServer.options[selServer.selectedIndex];
-    const srvName = selectedOption.getAttribute('data-name') || selServer.value;
-    const srvIp = selectedOption.getAttribute('data-ip') || '';
-    const srvPort = selectedOption.getAttribute('data-port') || '1521';
-    const srvService = selectedOption.getAttribute('data-service') || '';
-    const srvEnv = selectedOption.getAttribute('data-env') || '';
+    // Affichage d'un spinner sur le bouton pendant la vérification Oracle
+    const origBtnHtml = btnSubmit.innerHTML;
+    btnSubmit.disabled = true;
+    btnSubmit.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Vérification de vos identifiants...';
 
-    // Mise à jour de l'affichage dans le modal
-    document.getElementById('modal_display_server_name').innerText = srvName + (srvEnv ? ' (' + srvEnv + ')' : '');
-    document.getElementById('modal_display_server_endpoint').innerText = srvIp + ':' + srvPort;
-    document.getElementById('modal_display_server_service').innerText = srvService;
-    document.getElementById('modal_display_user').innerText = userVal;
+    try {
+        const formData = new FormData();
+        formData.append('server_id', selServer.value);
+        formData.append('username', userVal);
+        formData.append('current_password', inputPwd.value);
+        formData.append('_zirioam_csrf_token', '<?= zirioam_csrf_token() ?>');
 
-    // Remplissage des champs cachés
-    document.getElementById('modal_hidden_server_id').value = selServer.value;
-    document.getElementById('modal_hidden_username').value = userVal;
+        const response = await fetch('<?= zirioam_url('/UpdPwd/verify') ?>', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-Csrf-Token': '<?= zirioam_csrf_token() ?>'
+            }
+        });
 
-    // Pré-remplissage de l'ancien mot de passe
-    document.getElementById('modal_old_password').value = inputPwd.value;
+        const data = await response.json();
 
-    // Réinitialisation des nouveaux mots de passe
-    document.getElementById('modal_new_password').value = '';
-    document.getElementById('modal_confirm_password').value = '';
+        if (response.ok && data.valid) {
+            // Extraction des données confirmées par le serveur
+            const selectedOption = selServer.options[selServer.selectedIndex];
+            const srvName = data.server_name || selectedOption.getAttribute('data-name') || selServer.value;
+            const srvEndpoint = data.server_endpoint || (selectedOption.getAttribute('data-ip') + ':' + selectedOption.getAttribute('data-port'));
+            const srvService = data.server_service || selectedOption.getAttribute('data-service') || '';
+            const srvEnv = data.server_env || selectedOption.getAttribute('data-env') || '';
 
-    // Affichage du modal Bootstrap
-    const modalEl = document.getElementById('modalUpdatePassword');
-    const modalInstance = new bootstrap.Modal(modalEl);
-    modalInstance.show();
-    setTimeout(() => {
-        document.getElementById('modal_new_password').focus();
-    }, 400);
+            // Mise à jour de l'affichage dans le modal
+            document.getElementById('modal_display_server_name').innerText = srvName + (srvEnv ? ' (' + srvEnv + ')' : '');
+            document.getElementById('modal_display_server_endpoint').innerText = srvEndpoint;
+            document.getElementById('modal_display_server_service').innerText = srvService;
+            document.getElementById('modal_display_user').innerText = data.oracle_user || userVal;
+
+            // Remplissage des champs cachés
+            document.getElementById('modal_hidden_server_id').value = selServer.value;
+            document.getElementById('modal_hidden_username').value = data.oracle_user || userVal;
+
+            // Pré-remplissage de l'ancien mot de passe
+            document.getElementById('modal_old_password').value = inputPwd.value;
+
+            // Réinitialisation des nouveaux mots de passe
+            document.getElementById('modal_new_password').value = '';
+            document.getElementById('modal_confirm_password').value = '';
+
+            // Affichage du modal Bootstrap (uniquement si les identifiants sont validés !)
+            const modalEl = document.getElementById('modalUpdatePassword');
+            const modalInstance = new bootstrap.Modal(modalEl);
+            modalInstance.show();
+            setTimeout(() => {
+                document.getElementById('modal_new_password').focus();
+            }, 400);
+        } else {
+            // Identifiant ou mot de passe incorrect : ne pas ouvrir le modal et avertir l'utilisateur
+            const errorMsg = data.message || "Mot de passe actuel incorrect ou identifiant introuvable. Veuillez réessayer.";
+            showAlert(errorMsg, "danger");
+            inputPwd.focus();
+            inputPwd.select();
+        }
+    } catch (err) {
+        showAlert("Erreur lors de la communication avec le serveur pour la vérification. Veuillez vérifier votre connexion.", "danger");
+    } finally {
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = origBtnHtml;
+    }
 }
 
 function validateAndConfirmPasswordChange() {
