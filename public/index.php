@@ -55,6 +55,12 @@ $auth = \App\Middleware\AuthMiddleware::class;
 $router->get('/', [\App\Controllers\HomeController::class, 'index']);
 $router->get('/servers', [\App\Controllers\ServerController::class, 'index']);
 
+// Espace Développeur Autonome : Changement de Mot de Passe (Sans menu DBA)
+$router->get('/UpdPwd', [\App\Controllers\DeveloperSelfServiceController::class, 'index']);
+$router->post('/UpdPwd', [\App\Controllers\DeveloperSelfServiceController::class, 'update'], [$csrf]);
+$router->get('/updpwd', [\App\Controllers\DeveloperSelfServiceController::class, 'index']);
+$router->post('/updpwd', [\App\Controllers\DeveloperSelfServiceController::class, 'update'], [$csrf]);
+
 // Authentification Oracle DBA
 $router->get('/servers/{server_id}/connect', [\App\Controllers\ConnectionController::class, 'show']);
 $router->post('/servers/{server_id}/connect', [\App\Controllers\ConnectionController::class, 'connect'], [$csrf]);

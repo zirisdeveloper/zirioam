@@ -21,7 +21,7 @@ class Router
     private function addRoute(string $method, string $path, $handler, array $middlewares): void
     {
         $pattern = preg_replace('/\{([a-zA-Z0-9_]+)\}/', '(?P<$1>[^/]+)', $path);
-        $pattern = '#^' . $pattern . '$#';
+        $pattern = '#^' . $pattern . '$#i';
 
         $this->routes[] = [
             'method' => $method,

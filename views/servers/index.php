@@ -84,5 +84,15 @@
             <?php endforeach; ?>
         <?php endif; ?>
     </div>
+
+    <!-- Accès direct Espace Développeur (Self-Service) -->
+    <div class="text-center mt-5">
+        <div class="card border-0 shadow-sm d-inline-block p-3 bg-white">
+            <span class="text-muted me-2">Vous êtes développeur et souhaitez renouveler votre mot de passe Oracle ?</span>
+            <a href="<?= zirioam_url('/UpdPwd') ?>" class="btn btn-outline-primary btn-sm fw-bold">
+                🔑 Espace Développeur (/UpdPwd) &rarr;
+            </a>
+        </div>
+    </div>
 </div>
 
