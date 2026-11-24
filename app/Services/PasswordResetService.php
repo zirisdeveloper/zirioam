@@ -19,7 +19,7 @@ class PasswordResetService
      * Réinitialise le mot de passe d'un développeur dans toute la CDB
      * Règles absolues :
      * 1. Génération cryptographique
-     * 2. Expiration immédiate (PASSWORD EXPIRE)
+     * 2. Mot de passe immédiatement opérationnel (évite ORA-65162 sur PDB si pas d'accès CDB$ROOT)
      * 3. AUCUN mot de passe stocké en clair ou dans les logs
      * 4. Révélation unique
      */
@@ -29,7 +29,8 @@ class PasswordResetService
         ?string $clientIp = null,
         ?string $customPassword = null,
         ?string $explicitVaultUser = null,
-        ?string $explicitVaultPassword = null
+        ?string $explicitVaultPassword = null,
+        bool $expirePassword = false
     ): string {
         $norm = strtoupper(trim($username));
         $oracleUser = str_starts_with($norm, 'C##') ? $norm : 'C##' . $norm;
@@ -48,23 +49,28 @@ class PasswordResetService
         $executed = false;
         $lastException = null;
 
+        // Si $expirePassword est false, nous omettons 'PASSWORD EXPIRE'.
+        // En Oracle Multitenant, un compte commun avec PASSWORD EXPIRE ne peut PAS changer son mot de passe
+        // lors d'une connexion directe à une PDB (ORA-65162). Comme les développeurs n'ont pas CREATE SESSION
+        // dans CDB$ROOT, le mot de passe doit être actif (OPEN) directement.
+        $expireClause = $expirePassword ? ' PASSWORD EXPIRE' : '';
+        $ddlCommand = "ALTER USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\"{$expireClause} ACCOUNT UNLOCK CONTAINER = ALL";
+
         // 1. Tenter EN PRIORITÉ via la connexion d'administration active (SYS / DBA)
-        // Note architecturale : Sur la plupart des configurations (y compris avec Database Vault),
-        // le compte SYS dispose des droits pour exécuter ALTER USER ... IDENTIFIED BY ... PASSWORD EXPIRE.
         try {
             $currentCon = $this->db->getCurrentContainer();
             if ($currentCon !== 'CDB$ROOT') {
                 $this->db->switchContainer('CDB$ROOT');
             }
-            $sql = "ALTER USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
-            $this->db->executeDdl($sql);
+            $this->db->executeDdl($ddlCommand);
             $executed = true;
         } catch (\Throwable $sysErr) {
             $lastException = $sysErr;
         }
 
-        // 2. Si échec DDL direct, tenter via le package PL/SQL C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS
-        if (!$executed) {
+        // 2. Si échec DDL direct et que PASSWORD EXPIRE est explicitement demandé,
+        // tenter via le package PL/SQL C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS
+        if (!$executed && $expirePassword) {
             try {
                 $currentCon = $this->db->getCurrentContainer();
                 if ($currentCon !== 'CDB$ROOT') {
@@ -103,8 +109,7 @@ class PasswordResetService
                         if ($curCon !== 'CDB$ROOT') {
                             $vaultConn->switchContainer('CDB$ROOT');
                         }
-                        $sql = "ALTER USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
-                        $vaultConn->executeDdl($sql);
+                        $vaultConn->executeDdl($ddlCommand);
                         $executed = true;
                     } finally {
                         $vaultConn->close();
@@ -139,12 +144,17 @@ class PasswordResetService
             ]);
 
             // Audit
+            $auditDetails = $expirePassword 
+                ? 'Réinitialisation mot de passe (PASSWORD EXPIRE)' 
+                : 'Réinitialisation mot de passe actif (compte déverrouillé)';
+
             $auditSql = "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT 
                          (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS, CLIENT_IP)
-                         VALUES (SYSTIMESTAMP, :dba, 'PASSWORD_RESET', :target, 'Réinitialisation mot de passe temporaire (expiré)', 'SUCCESS', :ip)";
+                         VALUES (SYSTIMESTAMP, :dba, 'PASSWORD_RESET', :target, :details, 'SUCCESS', :ip)";
             $this->db->execute($auditSql, [
                 'dba' => $dbaUser,
                 'target' => $oracleUser,
+                'details' => $auditDetails,
                 'ip' => $clientIp,
             ]);
         } catch (\Throwable $e) {

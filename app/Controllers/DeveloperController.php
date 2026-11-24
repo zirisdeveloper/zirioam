@@ -95,7 +95,7 @@ class DeveloperController extends Controller
                     !empty($vaultPassword) ? $vaultPassword : null
                 );
                 $this->session->set('_temp_revealed_password', $tempPassword);
-                $this->flash('success', "Le développeur et son compte Oracle commun C##{$username} ont été créés avec succès (PASSWORD EXPIRE appliqué).");
+                $this->flash('success', "Le développeur et son compte Oracle commun C##{$username} ont été créés avec succès (mot de passe initial actif sur les PDBs autorisées).");
             } else {
                 $this->flash('success', "Le développeur a été créé avec succès dans le référentiel ZIRIOAM.");
             }

@@ -204,8 +204,7 @@
                             <h6 class="fw-bold mb-1">Règles fondamentales Oracle :</h6>
                             <ul class="mb-0 ps-3">
                                 <li><strong>Isolation stricte PDB :</strong> Le développeur ne dispose pas du privilège <code>CREATE SESSION</code> dans <code>CDB$ROOT</code>. La connexion n'est autorisée que localement dans les PDBs où un profil d'accès lui est explicitement attribué.</li>
-                                <li>La réinitialisation s'applique avec <code>PASSWORD EXPIRE CONTAINER = ALL</code>.</li>
-                                <li>Le développeur devra changer son mot de passe dès sa première connexion (SQL Developer / SQL*Plus).</li>
+                                <li>La réinitialisation applique un mot de passe immédiatement actif et déverrouille le compte dans toutes les PDBs (évite l'erreur <code>ORA-65162</code>).</li>
                                 <li>Aucun mot de passe n'est enregistré dans les bases ZIRIOAM.</li>
                             </ul>
                         </div>
@@ -323,8 +322,20 @@
                         </div>
                     </div>
 
-                    <div class="alert alert-warning small mb-0 py-2">
-                        ⚠️ La clause <strong>PASSWORD EXPIRE CONTAINER = ALL</strong> sera appliquée. Le mot de passe vous sera révélé <strong>une seule fois</strong> après validation.
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="expire_password" id="rst_expire_pwd" value="1">
+                            <label class="form-check-label small" for="rst_expire_pwd">
+                                Forcer l'expiration immédiate (<code>PASSWORD EXPIRE</code>)
+                            </label>
+                        </div>
+                        <div class="form-text extra-small text-muted" style="font-size: 0.78rem;">
+                            ⚠️ <strong>Attention :</strong> Sous Oracle Multitenant, un utilisateur commun restreint aux PDBs ne peut pas changer son mot de passe lors de la connexion à la PDB (déclenche <code>ORA-65162</code>). Laissez cette case <strong>décochée</strong> pour que le mot de passe soit directement opérationnel.
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info small mb-0 py-2">
+                        ℹ️ Le mot de passe sera immédiatement actif et le compte déverrouillé sur toutes les PDBs autorisées. Il vous sera révélé <strong>une seule fois</strong> après validation.
                     </div>
                 </div>
                 <div class="modal-footer">

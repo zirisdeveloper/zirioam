@@ -32,7 +32,7 @@ class RoleHierarchyTest
         $commonRole = 'C##RL_' . $base;
 
         $cdbOrders = [
-            "CREATE USER {$commonUser} IDENTIFIED BY \"Temp#Pwd2026\" PASSWORD EXPIRE CONTAINER = ALL",
+            "CREATE USER {$commonUser} IDENTIFIED BY \"Temp#Pwd2026\" CONTAINER = ALL",
             "CREATE ROLE {$commonRole} CONTAINER = ALL",
             "GRANT {$commonRole} TO {$commonUser} CONTAINER = ALL",
             "ALTER USER {$commonUser} DEFAULT ROLE ALL CONTAINER = ALL",

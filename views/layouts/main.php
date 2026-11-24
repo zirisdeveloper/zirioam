@@ -105,7 +105,7 @@
                             ⚠️ Mot de passe temporaire généré (Révélation Unique)
                         </h5>
                         <p class="mb-0 text-dark small">
-                            Ce mot de passe est marqué <strong>PASSWORD EXPIRE</strong>. Le développeur devra obligatoirement le changer lors de sa prochaine connexion Oracle.
+                            Ce mot de passe temporaire est immédiatement actif pour les connexions sur les PDBs autorisées.
                             Il ne sera plus jamais réaffiché et n'est pas conservé en base.
                         </p>
                     </div>

@@ -44,6 +44,7 @@ class PasswordController extends Controller
         $clientIp = $request->header('X-Forwarded-For') ?? $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         $pwdMode = (string)$request->post('password_mode', 'auto');
         $customPassword = $pwdMode === 'manual' ? (string)$request->post('custom_password', '') : null;
+        $expirePassword = (bool)$request->post('expire_password', false);
 
         // Récupération optionnelle des identifiants Vault Manager saisis dans la modal
         $vaultUser = trim((string)$request->post('vault_user', ''));
@@ -60,12 +61,14 @@ class PasswordController extends Controller
                 $clientIp,
                 $customPassword,
                 !empty($vaultUser) ? $vaultUser : null,
-                !empty($vaultPassword) ? $vaultPassword : null
+                !empty($vaultPassword) ? $vaultPassword : null,
+                $expirePassword
             );
 
             // Stocker pour affichage unique dans le bandeau d'alerte sécurisé
             $this->session->set('_temp_revealed_password', $tempPassword);
-            $this->flash('success', "Le mot de passe de {$developer['ORACLE_USER']} a été réinitialisé avec succès (PASSWORD EXPIRE appliqué).");
+            $expireMsg = $expirePassword ? ' (PASSWORD EXPIRE appliqué)' : ' (mot de passe immédiatement actif, compte déverrouillé)';
+            $this->flash('success', "Le mot de passe de {$developer['ORACLE_USER']} a été réinitialisé avec succès{$expireMsg}.");
         } catch (\Throwable $e) {
             $this->flash('danger', "Échec de réinitialisation du mot de passe : " . $e->getMessage());
         }

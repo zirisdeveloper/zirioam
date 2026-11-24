@@ -202,8 +202,11 @@ class DeveloperService
 
     /**
      * Provisionne le compte Oracle commun dans la CDB
-     * Règle de sécurité : CREATE USER C##... IDENTIFIED BY ... PASSWORD EXPIRE CONTAINER = ALL;
+     * Règle de sécurité : CREATE USER C##... IDENTIFIED BY ... CONTAINER = ALL;
      * AUCUN PRIVILÈGE CREATE SESSION N'EST DONNÉ À CE NIVEAU !
+     * Note architecturale : En environnement Oracle Multitenant avec isolation stricte PDB
+     * (développeurs sans CREATE SESSION dans CDB$ROOT), PASSWORD EXPIRE n'est pas appliqué à la création
+     * pour éviter le blocage ORA-65162 lors de la première connexion directe à la PDB autorisée.
      */
     public function provisionOracleAccount(
         string $username,
@@ -246,9 +249,13 @@ class DeveloperService
                 if ($curCon !== 'CDB$ROOT') {
                     $vaultConn->switchContainer('CDB$ROOT');
                 }
-                $sql = "CREATE USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
+                $sql = "CREATE USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" CONTAINER = ALL";
                 $vaultConn->executeDdl($sql);
                 $executed = true;
+
+                try {
+                    $vaultConn->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = ALL");
+                } catch (\Throwable $e) {}
 
                 // Création et configuration du rôle commun associé via Vault
                 try {
@@ -299,9 +306,13 @@ class DeveloperService
                 $executed = true;
             } catch (\Throwable $pkgErr) {
                 try {
-                    $sql = "CREATE USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" PASSWORD EXPIRE CONTAINER = ALL";
+                    $sql = "CREATE USER {$oracleUser} IDENTIFIED BY \"{$tempPassword}\" CONTAINER = ALL";
                     $this->db->executeDdl($sql);
                     $executed = true;
+
+                    try {
+                        $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = ALL");
+                    } catch (\Throwable $e) {}
                 } catch (\Throwable $ddlErr) {
                     $errMsg = $ddlErr->getMessage();
                     if (strpos($errMsg, 'ORA-01031') !== false || strpos($errMsg, 'ORA-474') !== false) {

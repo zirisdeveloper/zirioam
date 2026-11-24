@@ -72,8 +72,8 @@
                                     <div class="form-text small">Doit respecter les critères de complexité Oracle 19c.</div>
                                 </div>
 
-                                <div class="alert alert-warning py-2 px-3 small mb-0 mt-2">
-                                    🔒 Le mot de passe sera marqué <strong>PASSWORD EXPIRE</strong> et vous sera révélé <strong>une seule fois</strong> sur l'écran suivant avec un bouton <strong>COPIER</strong>.
+                                <div class="alert alert-info py-2 px-3 small mb-0 mt-2">
+                                    🔒 Le mot de passe initial sera immédiatement actif et vous sera révélé <strong>une seule fois</strong> sur l'écran suivant avec un bouton <strong>COPIER</strong>.
                                 </div>
 
                                 <?php $sessVault = (string)\App\Core\App::getInstance()->getSession()->get('vault_user', ''); ?>
