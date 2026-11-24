@@ -387,18 +387,46 @@ class AccessProvisioningService
 
         $tablespaces = array_unique(array_filter($tablespaces));
 
-        // 4. Attribuer QUOTA UNLIMITED sur chaque tablespace trouvé
+        // 4. Attribuer QUOTA UNLIMITED sur chaque tablespace trouvé pour le développeur ET pour le schéma propriétaire
         foreach ($tablespaces as $ts) {
+            // Pour le développeur
             try {
                 $this->db->executeDdl("ALTER USER {$oracleUser} QUOTA UNLIMITED ON \"{$ts}\"");
-                $granted[] = "QUOTA ON \"{$ts}\"";
+                $granted[] = "QUOTA DEV ON \"{$ts}\"";
             } catch (\Throwable $e) {
                 try {
                     $this->db->executeDdl("ALTER USER {$oracleUser} QUOTA UNLIMITED ON {$ts}");
-                    $granted[] = "QUOTA ON {$ts}";
+                    $granted[] = "QUOTA DEV ON {$ts}";
                 } catch (\Throwable $e2) {
-                    $errors[] = "QUOTA ON {$ts}: " . $e2->getMessage();
+                    $errors[] = "QUOTA DEV ON {$ts}: " . $e2->getMessage();
                 }
+            }
+
+            // CRITIQUE : Pour le schéma propriétaire des tables (ex: SARAHTEST).
+            // En Oracle 19c avec DEFERRED_SEGMENT_CREATION, le premier INSERT dans une table vide
+            // alloue le premier segment au nom du propriétaire du schéma. Si le propriétaire n'a pas
+            // de quota sur le tablespace, Oracle lève ORA-01950, même si le développeur est UNLIMITED !
+            if (!empty($schema)) {
+                try {
+                    $this->db->executeDdl("ALTER USER \"{$schema}\" QUOTA UNLIMITED ON \"{$ts}\"");
+                    $granted[] = "QUOTA SCHEMA \"{$schema}\" ON \"{$ts}\"";
+                } catch (\Throwable $se1) {
+                    try {
+                        $this->db->executeDdl("ALTER USER {$schema} QUOTA UNLIMITED ON {$ts}");
+                        $granted[] = "QUOTA SCHEMA {$schema} ON {$ts}";
+                    } catch (\Throwable $se2) {}
+                }
+            }
+        }
+
+        // Accorder également UNLIMITED TABLESPACE au schéma propriétaire si possible
+        if (!empty($schema)) {
+            try {
+                $this->db->executeDdl("GRANT UNLIMITED TABLESPACE TO \"{$schema}\"");
+            } catch (\Throwable $e) {
+                try {
+                    $this->db->executeDdl("GRANT UNLIMITED TABLESPACE TO {$schema}");
+                } catch (\Throwable $e2) {}
             }
         }
 
@@ -489,9 +517,19 @@ class AccessProvisioningService
                 // Existe déjà (ORA-01921)
             }
 
-            // 2. Accorder CONNECT au rôle commun
+            // 2. Règle de sécurité ZIRIOAM : Aucun privilège CONNECT ou CREATE SESSION n'est accordé dans CDB$ROOT.
+            // On s'assure qu'aucun droit de connexion résiduel n'existe au niveau CDB$ROOT
             try {
-                $this->db->executeDdl("GRANT CONNECT TO {$commonRole} CONTAINER = ALL");
+                $this->db->executeDdl("REVOKE CONNECT FROM {$commonRole} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$commonUser} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$commonUser} CONTAINER = CURRENT");
+            } catch (\Throwable $e2) {}
+            try {
+                $this->db->executeDdl("REVOKE CONNECT FROM {$commonUser} CONTAINER = ALL");
             } catch (\Throwable $e) {}
 
             // 3. Attribuer le rôle commun au compte utilisateur
@@ -621,6 +659,25 @@ class AccessProvisioningService
         try {
             $this->grantTablespaceQuotaForSchema($oracleUser, $schema, $localRole);
         } catch (\Throwable $e) {}
+
+        // Pré-allocation des segments pour les tables vides existantes avec DEFERRED_SEGMENT_CREATION
+        // Empêche définitivement l'erreur ORA-01950 lors du premier INSERT par un développeur
+        if (!empty($schema)) {
+            try {
+                $emptyTables = $this->db->query("
+                    SELECT TABLE_NAME FROM DBA_TABLES 
+                    WHERE OWNER = :s AND SEGMENT_CREATED = 'NO'
+                ", ['s' => $schema]);
+                foreach ($emptyTables as $et) {
+                    $tbl = $et['TABLE_NAME'] ?? '';
+                    if (!empty($tbl)) {
+                        try {
+                            $this->db->executeDdl("ALTER TABLE \"{$schema}\".\"{$tbl}\" ALLOCATE EXTENT");
+                        } catch (\Throwable $ae) {}
+                    }
+                }
+            } catch (\Throwable $te) {}
+        }
 
         // 7. Mettre à jour la matrice ZIRIOAM_DEVELOPER_ACCESS
         $mergeSql = "MERGE INTO ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS dest

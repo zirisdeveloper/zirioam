@@ -255,13 +255,25 @@ class DeveloperService
                     $vaultConn->executeDdl("CREATE ROLE {$commonRole} CONTAINER = ALL");
                 } catch (\Throwable $e) {}
                 try {
-                    $vaultConn->executeDdl("GRANT CONNECT TO {$commonRole} CONTAINER = ALL");
-                } catch (\Throwable $e) {}
-                try {
                     $vaultConn->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
                 } catch (\Throwable $e) {}
                 try {
                     $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
+                } catch (\Throwable $e) {}
+
+                // RÈGLE STRICTE ZIRIOAM : Aucun privilège CONNECT ou CREATE SESSION n'est accordé dans CDB$ROOT !
+                // Le développeur ne recevra CREATE SESSION que localement dans les PDBs autorisées lors de l'attribution de droits.
+                try {
+                    $vaultConn->executeDdl("REVOKE CONNECT FROM {$commonRole} CONTAINER = ALL");
+                } catch (\Throwable $e) {}
+                try {
+                    $vaultConn->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = ALL");
+                } catch (\Throwable $e) {}
+                try {
+                    $vaultConn->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = CURRENT");
+                } catch (\Throwable $e) {}
+                try {
+                    $vaultConn->executeDdl("REVOKE CONNECT FROM {$oracleUser} CONTAINER = ALL");
                 } catch (\Throwable $e) {}
             } catch (\Throwable $ve) {
                 // Si échec sur vaultConn, continuer vers les alternatives
@@ -303,41 +315,18 @@ class DeveloperService
             }
         }
 
-        // 3. S'assurer que le rôle commun C##RL_<USER> existe et dispose de CONNECT
+        // 3. S'assurer que le rôle commun C##RL_<USER> existe et n'a AUCUN droit CREATE SESSION dans CDB$ROOT
         try {
             $this->ensureCommonRole($norm);
         } catch (\Throwable $e) {
             // Ignorer si déjà en place
         }
 
-        // 4. Positionner automatiquement les quotas de stockage illimités et UNLIMITED TABLESPACE dans toutes les PDBs ouvertes
-        try {
-            $openPdbs = $this->db->query("
-                SELECT NAME FROM V\$PDBS 
-                WHERE OPEN_MODE = 'READ WRITE' AND UPPER(NAME) NOT IN ('PDB\$SEED')
-            ");
-            $accessService = new AccessProvisioningService($this->db);
-            foreach ($openPdbs as $pdb) {
-                $pdbName = $pdb['NAME'] ?? '';
-                if (!empty($pdbName)) {
-                    try {
-                        $this->db->switchContainer($pdbName);
-                        $accessService->grantTablespaceQuotaForSchema($oracleUser, '', 'RL_' . $norm);
-                    } catch (\Throwable $pe) {}
-                }
-            }
-        } catch (\Throwable $e) {
-        } finally {
-            try {
-                $this->db->switchContainer('CDB$ROOT');
-            } catch (\Throwable $e) {}
-        }
-
         // Audit CDB
         try {
             $this->db->execute(
                 "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS) " .
-                "VALUES (SYSTIMESTAMP, :dba, 'CREATE_ORACLE_COMMON_USER', :target, 'Compte commun et rôle {$commonRole} créés', 'SUCCESS')",
+                "VALUES (SYSTIMESTAMP, :dba, 'CREATE_ORACLE_COMMON_USER', :target, 'Compte commun et rôle {$commonRole} créés (Accès CDB\$ROOT désactivé)', 'SUCCESS')",
                 ['dba' => $dbaUser, 'target' => $oracleUser]
             );
         } catch (\Throwable $e) {}
@@ -347,7 +336,7 @@ class DeveloperService
 
     /**
      * S'assure que le rôle commun associé C##RL_<USER> existe dans CDB$ROOT,
-     * dispose du rôle CONNECT et est rattaché au compte commun (Règles 1 & 2).
+     * est rattaché au compte commun, mais SANS AUCUN privilège CREATE SESSION ou CONNECT dans CDB$ROOT.
      */
     public function ensureCommonRole(string $username): bool
     {
@@ -366,10 +355,22 @@ class DeveloperService
                 // Existe déjà (ORA-01921)
             }
 
-            // 2. Accorder le privilège CONNECT au rôle commun
+            // 2. RÈGLE STRICTE ZIRIOAM : Aucun privilège CONNECT ou CREATE SESSION n'est accordé dans CDB$ROOT !
             try {
-                $this->db->executeDdl("GRANT CONNECT TO {$commonRole} CONTAINER = ALL");
+                $this->db->executeDdl("REVOKE CONNECT FROM {$commonRole} CONTAINER = ALL");
             } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = CURRENT");
+            } catch (\Throwable $e2) {}
+            try {
+                $this->db->executeDdl("REVOKE CONNECT FROM {$oracleUser} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("REVOKE CONNECT FROM {$oracleUser} CONTAINER = CURRENT");
+            } catch (\Throwable $e2) {}
 
             // 3. Attribuer le rôle commun au compte utilisateur
             try {
@@ -380,6 +381,63 @@ class DeveloperService
             try {
                 $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
             } catch (\Throwable $e) {}
+
+            // Règle ZIRIOAM : Nettoyer immédiatement tout droit de connexion résiduel dans CDB$ROOT
+            $this->stripCdbRootSession($norm);
+
+            return true;
+        });
+    }
+
+    /**
+     * Révoque tout privilège de connexion dans CDB$ROOT (CREATE SESSION, CONNECT)
+     * et tue toute session active dans CDB$ROOT.
+     * Garantit que le développeur ne peut jamais se connecter à la racine de la base CDB (DEV16).
+     */
+    public function stripCdbRootSession(string $username): bool
+    {
+        $norm = strtoupper(trim($username));
+        if (str_starts_with($norm, 'C##')) {
+            $norm = substr($norm, 3);
+        }
+        $oracleUser = 'C##' . $norm;
+        $commonRole = 'C##RL_' . $norm;
+
+        return $this->executeInCdbRoot(function() use ($oracleUser, $commonRole) {
+            try {
+                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = CURRENT");
+            } catch (\Throwable $e2) {}
+            try {
+                $this->db->executeDdl("REVOKE CONNECT FROM {$oracleUser} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("REVOKE CONNECT FROM {$oracleUser} CONTAINER = CURRENT");
+            } catch (\Throwable $e2) {}
+            try {
+                $this->db->executeDdl("REVOKE CONNECT FROM {$commonRole} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("REVOKE CONNECT FROM {$commonRole} CONTAINER = CURRENT");
+            } catch (\Throwable $e2) {}
+            try {
+                $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE NONE CONTAINER = CURRENT");
+            } catch (\Throwable $e) {}
+
+            // Tuer les sessions actives éventuelles du développeur dans CDB$ROOT
+            try {
+                $sessions = $this->db->query(
+                    "SELECT SID, SERIAL# FROM V\$SESSION WHERE USERNAME = :u",
+                    ['u' => $oracleUser]
+                );
+                foreach ($sessions as $s) {
+                    try {
+                        $this->db->executeDdl("ALTER SYSTEM KILL SESSION '{$s['SID']},{$s['SERIAL#']}' IMMEDIATE");
+                    } catch (\Throwable $ke) {}
+                }
+            } catch (\Throwable $se) {}
 
             return true;
         });
@@ -401,6 +459,7 @@ class DeveloperService
         }
         $oracleUser = 'C##' . $norm;
         $localRole = 'RL_' . $norm;
+        $commonRole = 'C##RL_' . $norm;
 
         $lockedInRoot = false;
         $lockedInPdbCount = 0;
@@ -411,7 +470,11 @@ class DeveloperService
         $connService = new \App\Services\OracleConnectionService();
         $vaultConn = null;
         if (!empty($explicitVaultUser) && !empty($explicitVaultPassword)) {
-            $vaultConn = $connService->createCustomConnection($explicitVaultUser, $explicitVaultPassword);
+            try {
+                $vaultConn = $connService->createCustomConnection($explicitVaultUser, $explicitVaultPassword);
+            } catch (\Throwable $e) {
+                $errors[] = "Connexion Vault: " . $e->getMessage();
+            }
         } else {
             $vaultConn = $connService->getVaultConnection();
         }
@@ -440,7 +503,7 @@ class DeveloperService
                             $vaultConn->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK");
                             $lockedInRoot = true;
                         } catch (\Throwable $e3) {
-                            $errors[] = "Vault root: " . $e3->getMessage();
+                            $errors[] = "Vault root lock: " . $e3->getMessage();
                         }
                     }
                 }
@@ -457,6 +520,11 @@ class DeveloperService
                         } catch (\Throwable $e3) {}
                     }
                 }
+
+                // Révoquer le rôle commun via Vault
+                try {
+                    $vaultConn->executeDdl("REVOKE {$commonRole} FROM {$oracleUser} CONTAINER = ALL");
+                } catch (\Throwable $e) {}
             } finally {
                 $vaultConn->close();
             }
@@ -464,7 +532,7 @@ class DeveloperService
 
         // Stratégie B : Si non verrouillé dans CDB$ROOT, tenter via la connexion DBA standard
         if (!$lockedInRoot) {
-            $this->executeInCdbRoot(function() use ($oracleUser, $norm, $dbaUser, &$lockedInRoot, &$errors) {
+            $this->executeInCdbRoot(function() use ($oracleUser, $commonRole, $norm, $dbaUser, &$lockedInRoot, &$errors) {
                 // Essai via package PL/SQL
                 try {
                     $this->db->execute(
@@ -509,8 +577,44 @@ class DeveloperService
                         } catch (\Throwable $e3) {}
                     }
                 }
+
+                try {
+                    $this->db->executeDdl("REVOKE {$commonRole} FROM {$oracleUser} CONTAINER = ALL");
+                } catch (\Throwable $e) {}
             });
         }
+
+        // Règle ZIRIOAM : Nettoyer strictement les privilèges et tuer les sessions résiduelles dans CDB$ROOT
+        $this->executeInCdbRoot(function() use ($oracleUser, $commonRole) {
+            try {
+                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser} CONTAINER = CURRENT");
+            } catch (\Throwable $e2) {}
+            try {
+                $this->db->executeDdl("REVOKE CONNECT FROM {$oracleUser} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("REVOKE CONNECT FROM {$oracleUser} CONTAINER = CURRENT");
+            } catch (\Throwable $e2) {}
+            try {
+                $this->db->executeDdl("REVOKE CONNECT FROM {$commonRole} CONTAINER = ALL");
+            } catch (\Throwable $e) {}
+
+            // Tuer les sessions actives éventuelles du développeur dans CDB$ROOT
+            try {
+                $rootSessions = $this->db->query(
+                    "SELECT SID, SERIAL# FROM V\$SESSION WHERE USERNAME = :usr",
+                    ['usr' => $oracleUser]
+                );
+                foreach ($rootSessions as $s) {
+                    try {
+                        $this->db->executeDdl("ALTER SYSTEM KILL SESSION '{$s['SID']},{$s['SERIAL#']}' IMMEDIATE");
+                    } catch (\Throwable $ke) {}
+                }
+            } catch (\Throwable $se) {}
+        });
 
         // 2. Verrouillage systématique dans TOUTES les PDBs ouvertes + Révocation de ZIRIOAM_DEV_BASE_ROLE et CREATE SESSION
         // C'est ce qui garantit qu'aucune connexion sqlplus vers //IP:1521/PDBTEST ne peut aboutir !
@@ -534,7 +638,6 @@ class DeveloperService
                     } catch (\Throwable $le) {}
 
                     // B. Désactiver tous les rôles par défaut du développeur dans cette PDB (DEFAULT ROLE NONE)
-                    // Empêche toute activation automatique de rôles (ZIRIOAM_DEV_BASE_ROLE, CONNECT, etc.) lors du login
                     try {
                         $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE NONE");
                     } catch (\Throwable $de) {}
@@ -596,7 +699,16 @@ class DeveloperService
             } catch (\Throwable $e) {}
         }
 
-        // 3. Mise à jour du statut dans le référentiel ZIRIOAM
+        // 3. VÉRIFICATION STRICTE : Le compte DOIT être verrouillé dans CDB$ROOT !
+        if (!$lockedInRoot) {
+            $errDetail = !empty($errors) ? implode(' | ', $errors) : "Privilèges insuffisants";
+            throw new \RuntimeException(
+                "Échec de verrouillage du compte commun dans CDB\$ROOT ({$errDetail}). " .
+                "Sous Oracle Database Vault, le mot de passe du compte habilité (C##VOLTMANAGER) est obligatoire pour verrouiller le compte au niveau global (CONTAINER = ALL)."
+            );
+        }
+
+        // 4. Mise à jour du statut dans le référentiel ZIRIOAM
         try {
             $this->executeInCdbRoot(function() use ($norm) {
                 $this->db->execute(
@@ -606,25 +718,17 @@ class DeveloperService
             });
         } catch (\Throwable $e) {}
 
-        // 4. Audit CDB
+        // 5. Audit CDB
         try {
             $this->db->execute(
                 "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS) " .
-                "VALUES (SYSTIMESTAMP, :dba, 'LOCK_ACCOUNT', :target, 'Compte verrouillé (Root: ' || :r || ', PDBs: ' || :p || ')', 'SUCCESS')",
+                "VALUES (SYSTIMESTAMP, :dba, 'LOCK_ACCOUNT', :target, 'Compte verrouillé dans CDB\$ROOT et {$lockedInPdbCount} PDBs', 'SUCCESS')",
                 [
                     'dba' => $dbaUser,
                     'target' => $oracleUser,
-                    'r' => $lockedInRoot ? 'OUI' : 'NON',
-                    'p' => (string)$lockedInPdbCount
                 ]
             );
         } catch (\Throwable $e) {}
-
-        if (!$lockedInRoot && $lockedInPdbCount === 0 && !empty($errors)) {
-            throw new \RuntimeException(
-                "Impossible de verrouiller le compte Oracle : " . implode(' | ', $errors)
-            );
-        }
 
         return true;
     }
@@ -645,6 +749,7 @@ class DeveloperService
         }
         $oracleUser = 'C##' . $norm;
         $localRole = 'RL_' . $norm;
+        $commonRole = 'C##RL_' . $norm;
 
         $unlockedInRoot = false;
         $unlockedInPdbCount = 0;
@@ -655,7 +760,11 @@ class DeveloperService
         $connService = new \App\Services\OracleConnectionService();
         $vaultConn = null;
         if (!empty($explicitVaultUser) && !empty($explicitVaultPassword)) {
-            $vaultConn = $connService->createCustomConnection($explicitVaultUser, $explicitVaultPassword);
+            try {
+                $vaultConn = $connService->createCustomConnection($explicitVaultUser, $explicitVaultPassword);
+            } catch (\Throwable $e) {
+                $errors[] = "Connexion Vault: " . $e->getMessage();
+            }
         } else {
             $vaultConn = $connService->getVaultConnection();
         }
@@ -684,23 +793,18 @@ class DeveloperService
                             $vaultConn->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK");
                             $unlockedInRoot = true;
                         } catch (\Throwable $e3) {
-                            $errors[] = "Vault root: " . $e3->getMessage();
+                            $errors[] = "Vault root unlock: " . $e3->getMessage();
                         }
                     }
                 }
 
-                // Réactiver les rôles par défaut dans CDB$ROOT via Vault
+                // Réattribuer le rôle commun et réactiver les rôles par défaut via Vault
+                try {
+                    $vaultConn->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
+                } catch (\Throwable $e) {}
                 try {
                     $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
-                } catch (\Throwable $e) {
-                    try {
-                        $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = CURRENT");
-                    } catch (\Throwable $e2) {
-                        try {
-                            $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL");
-                        } catch (\Throwable $e3) {}
-                    }
-                }
+                } catch (\Throwable $e) {}
             } finally {
                 $vaultConn->close();
             }
@@ -708,7 +812,7 @@ class DeveloperService
 
         // Stratégie B : Via connexion DBA standard
         if (!$unlockedInRoot) {
-            $this->executeInCdbRoot(function() use ($oracleUser, $norm, $dbaUser, &$unlockedInRoot, &$errors) {
+            $this->executeInCdbRoot(function() use ($oracleUser, $commonRole, $norm, $dbaUser, &$unlockedInRoot, &$errors) {
                 try {
                     $this->db->execute(
                         "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS.unlock_account(:username, :dba); END;",
@@ -734,21 +838,16 @@ class DeveloperService
                     $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK");
                     $unlockedInRoot = true;
                 } catch (\Throwable $de3) {
-                    $errors[] = "DBA root: " . $de3->getMessage();
+                    $errors[] = "DBA root unlock: " . $de3->getMessage();
                 }
 
                 // Réactiver les rôles par défaut dans CDB$ROOT via DBA
                 try {
+                    $this->db->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
+                } catch (\Throwable $e) {}
+                try {
                     $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
-                } catch (\Throwable $e) {
-                    try {
-                        $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = CURRENT");
-                    } catch (\Throwable $e2) {
-                        try {
-                            $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL");
-                        } catch (\Throwable $e3) {}
-                    }
-                }
+                } catch (\Throwable $e) {}
             });
         }
 
@@ -807,7 +906,16 @@ class DeveloperService
             } catch (\Throwable $e) {}
         }
 
-        // 3. Mise à jour du statut dans le référentiel ZIRIOAM
+        // 3. VÉRIFICATION STRICTE : Le compte DOIT être déverrouillé dans CDB$ROOT !
+        if (!$unlockedInRoot) {
+            $errDetail = !empty($errors) ? implode(' | ', $errors) : "Privilèges insuffisants";
+            throw new \RuntimeException(
+                "Échec de déverrouillage du compte commun dans CDB\$ROOT ({$errDetail}). " .
+                "Sous Oracle Database Vault, le mot de passe du compte habilité (C##VOLTMANAGER) est obligatoire pour déverrouiller le compte au niveau global (CONTAINER = ALL)."
+            );
+        }
+
+        // 4. Mise à jour du statut dans le référentiel ZIRIOAM
         try {
             $this->executeInCdbRoot(function() use ($norm) {
                 $this->db->execute(
@@ -817,25 +925,17 @@ class DeveloperService
             });
         } catch (\Throwable $e) {}
 
-        // 4. Audit CDB
+        // 5. Audit CDB
         try {
             $this->db->execute(
                 "INSERT INTO C##ZIRIOAM_ADMIN.ZIRIOAM_CDB_AUDIT (EVENT_TIME, DBA_USER, ACTION_TYPE, TARGET_USER, DETAILS, STATUS) " .
-                "VALUES (SYSTIMESTAMP, :dba, 'UNLOCK_ACCOUNT', :target, 'Compte déverrouillé (Root: ' || :r || ', PDBs: ' || :p || ')', 'SUCCESS')",
+                "VALUES (SYSTIMESTAMP, :dba, 'UNLOCK_ACCOUNT', :target, 'Compte déverrouillé dans CDB\$ROOT et {$unlockedInPdbCount} PDBs', 'SUCCESS')",
                 [
                     'dba' => $dbaUser,
                     'target' => $oracleUser,
-                    'r' => $unlockedInRoot ? 'OUI' : 'NON',
-                    'p' => (string)$unlockedInPdbCount
                 ]
             );
         } catch (\Throwable $e) {}
-
-        if (!$unlockedInRoot && $unlockedInPdbCount === 0 && !empty($errors)) {
-            throw new \RuntimeException(
-                "Impossible de déverrouiller le compte Oracle : " . implode(' | ', $errors)
-            );
-        }
 
         return true;
     }

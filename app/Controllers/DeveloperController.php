@@ -275,6 +275,13 @@ class DeveloperController extends Controller
         if (!empty($vaultUser) && !empty($vaultPassword)) {
             $this->session->set('vault_user', strtoupper($vaultUser));
             $this->session->set('vault_password', $vaultPassword);
+        } else {
+            if (empty($vaultPassword)) {
+                $vaultPassword = (string)$this->session->get('vault_password', '');
+            }
+            if (empty($vaultUser)) {
+                $vaultUser = (string)$this->session->get('vault_user', '');
+            }
         }
 
         try {
@@ -284,7 +291,7 @@ class DeveloperController extends Controller
                 !empty($vaultUser) ? $vaultUser : null,
                 !empty($vaultPassword) ? $vaultPassword : null
             );
-            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été verrouillé avec succès (accès bloqué dans toute la CDB et les PDBs).");
+            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été verrouillé avec succès dans CDB\$ROOT et toutes les PDBs (accès bloqué).");
         } catch (\Throwable $e) {
             $this->flash('danger', "Erreur lors du verrouillage : " . $e->getMessage());
         }
@@ -315,6 +322,13 @@ class DeveloperController extends Controller
         if (!empty($vaultUser) && !empty($vaultPassword)) {
             $this->session->set('vault_user', strtoupper($vaultUser));
             $this->session->set('vault_password', $vaultPassword);
+        } else {
+            if (empty($vaultPassword)) {
+                $vaultPassword = (string)$this->session->get('vault_password', '');
+            }
+            if (empty($vaultUser)) {
+                $vaultUser = (string)$this->session->get('vault_user', '');
+            }
         }
 
         try {
@@ -324,9 +338,36 @@ class DeveloperController extends Controller
                 !empty($vaultUser) ? $vaultUser : null,
                 !empty($vaultPassword) ? $vaultPassword : null
             );
-            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été déverrouillé avec succès (accès rétabli dans toute la CDB et les PDBs).");
+            $this->flash('success', "Le compte Oracle {$developer['ORACLE_USER']} a été déverrouillé avec succès dans CDB\$ROOT et toutes les PDBs (accès rétabli).");
         } catch (\Throwable $e) {
             $this->flash('danger', "Erreur lors du déverrouillage : " . $e->getMessage());
+        }
+
+        return $this->redirect("/developers/{$id}");
+    }
+
+    /**
+     * Révocation stricte du privilège CREATE SESSION dans CDB$ROOT
+     */
+    public function stripCdbSession(Request $request, array $params): Response
+    {
+        $db = $this->connectionService->getActiveConnection();
+        if (!$db) return $this->redirect('/servers');
+
+        $devService = new DeveloperService($db);
+        $id = (int)($params['id'] ?? 0);
+        $developer = $devService->getDeveloperById($id);
+
+        if (!$developer) {
+            $this->flash('danger', "Développeur introuvable.");
+            return $this->redirect('/developers');
+        }
+
+        try {
+            $devService->stripCdbRootSession($developer['USERNAME']);
+            $this->flash('success', "Le privilège CREATE SESSION et le rôle CONNECT ont été révoqués dans CDB\$ROOT pour {$developer['ORACLE_USER']}. Le compte ne peut plus se connecter à la CDB racine (accès limité aux seules PDBs autorisées).");
+        } catch (\Throwable $e) {
+            $this->flash('danger', "Erreur lors de la révocation CDB : " . $e->getMessage());
         }
 
         return $this->redirect("/developers/{$id}");

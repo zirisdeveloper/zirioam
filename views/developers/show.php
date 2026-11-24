@@ -122,11 +122,16 @@
                                 </div>
                             </div>
 
-                            <?php $sessVault = (string)\App\Core\App::getInstance()->getSession()->get('vault_user', ''); ?>
-                            <?php if (!empty($sessVault)): ?>
+                            <?php 
+                            $sessVaultUser = (string)\App\Core\App::getInstance()->getSession()->get('vault_user', ''); 
+                            $sessVaultPass = (string)\App\Core\App::getInstance()->getSession()->get('vault_password', '');
+                            $hasActiveVault = !empty($sessVaultUser) && !empty($sessVaultPass);
+                            $sessVault = $sessVaultUser;
+                            ?>
+                            <?php if ($hasActiveVault): ?>
                                 <div class="alert alert-light border small py-2 mb-3 d-flex align-items-center">
                                     <span class="badge bg-success me-2">🛡️ Database Vault</span>
-                                    <span>Actif via <strong><?= e($sessVault) ?></strong></span>
+                                    <span>Session active via <strong><?= e($sessVaultUser) ?></strong></span>
                                 </div>
                             <?php else: ?>
                                 <div class="border rounded p-2 mb-3 bg-white">
@@ -136,7 +141,7 @@
                                     </div>
                                     <div class="row g-2">
                                         <div class="col-sm-6">
-                                            <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="C##VOLTMANAGER">
+                                            <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="<?= e($sessVaultUser ?: 'C##VOLTMANAGER') ?>">
                                         </div>
                                         <div class="col-sm-6">
                                             <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe Vault">
@@ -185,11 +190,20 @@
                             <a href="<?= zirioam_url('/access') ?>" class="btn btn-outline-primary">
                                 Gérer les droits sur les PDB &rarr;
                             </a>
+
+                            <!-- Blocage Connexion CDB$ROOT (Isolation stricte PDB) -->
+                            <form action="<?= zirioam_url('/developers/' . (int)$developer['DEVELOPER_ID'] . '/strip-cdb') ?>" method="POST" class="d-inline" onsubmit="return confirm('Confirmer la révocation du privilège CREATE SESSION dans CDB$ROOT ? Le développeur ne pourra se connecter qu\'aux PDBs autorisées.');">
+                                <?= zirioam_csrf_field() ?>
+                                <button type="submit" class="btn btn-outline-secondary" title="Révoquer CREATE SESSION dans CDB$ROOT (isolation stricte PDB)">
+                                    🛡️ Bloquer Accès CDB$ROOT
+                                </button>
+                            </form>
                         </div>
 
                         <div class="alert alert-secondary small mb-0 border">
                             <h6 class="fw-bold mb-1">Règles fondamentales Oracle :</h6>
                             <ul class="mb-0 ps-3">
+                                <li><strong>Isolation stricte PDB :</strong> Le développeur ne dispose pas du privilège <code>CREATE SESSION</code> dans <code>CDB$ROOT</code>. La connexion n'est autorisée que localement dans les PDBs où un profil d'accès lui est explicitement attribué.</li>
                                 <li>La réinitialisation s'applique avec <code>PASSWORD EXPIRE CONTAINER = ALL</code>.</li>
                                 <li>Le développeur devra changer son mot de passe dès sa première connexion (SQL Developer / SQL*Plus).</li>
                                 <li>Aucun mot de passe n'est enregistré dans les bases ZIRIOAM.</li>
@@ -285,11 +299,11 @@
                         </div>
                     </div>
 
-                    <?php if (!empty($sessVault)): ?>
+                    <?php if ($hasActiveVault): ?>
                         <div class="alert alert-light border small py-2 mb-3">
                             <div class="d-flex align-items-center">
                                 <span class="badge bg-success me-2">🛡️ Database Vault</span>
-                                <span>Session active via <strong><?= e($sessVault) ?></strong></span>
+                                <span>Session active via <strong><?= e($sessVaultUser) ?></strong></span>
                                 <a class="ms-auto text-decoration-none small text-primary" data-bs-toggle="collapse" href="#collapseRstVault" role="button">
                                     Changer &darr;
                                 </a>
@@ -298,7 +312,7 @@
                                 <div class="row g-2">
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Utilisateur Vault :</label>
-                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" value="<?= e($sessVault) ?>">
+                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" value="<?= e($sessVaultUser) ?>">
                                     </div>
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Nouveau mot de passe :</label>
@@ -319,11 +333,11 @@
                             <div class="row g-2">
                                 <div class="col-sm-6">
                                     <label class="form-label small fw-semibold mb-1">Compte Vault Manager :</label>
-                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="C##VOLTMANAGER">
+                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="<?= e($sessVaultUser ?: 'C##VOLTMANAGER') ?>">
                                 </div>
                                 <div class="col-sm-6">
                                     <label class="form-label small fw-semibold mb-1">Mot de passe Vault :</label>
-                                    <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe">
+                                    <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe C##VOLTMANAGER">
                                 </div>
                             </div>
                         </div>
@@ -360,11 +374,11 @@
                         Le compte sera verrouillé dans <code>CDB$ROOT</code> et le privilège <code>CREATE SESSION</code> sera révoqué dans toutes les PDBs ouvertes pour interdire immédiatement toute connexion.
                     </div>
 
-                    <?php if (!empty($sessVault)): ?>
+                    <?php if ($hasActiveVault): ?>
                         <div class="alert alert-light border small py-2 mb-3">
                             <div class="d-flex align-items-center">
                                 <span class="badge bg-success me-2">🛡️ Database Vault</span>
-                                <span>Session active via <strong><?= e($sessVault) ?></strong></span>
+                                <span>Session active via <strong><?= e($sessVaultUser) ?></strong></span>
                                 <a class="ms-auto text-decoration-none small text-primary" data-bs-toggle="collapse" href="#collapseLockVault" role="button">
                                     Changer &darr;
                                 </a>
@@ -373,7 +387,7 @@
                                 <div class="row g-2">
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Utilisateur Vault :</label>
-                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" value="<?= e($sessVault) ?>">
+                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" value="<?= e($sessVaultUser) ?>">
                                     </div>
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Nouveau mot de passe :</label>
@@ -385,20 +399,20 @@
                     <?php else: ?>
                         <div class="border rounded p-3 mb-3 bg-light">
                             <div class="d-flex align-items-center mb-1">
-                                <span class="badge bg-secondary me-2">🛡️ Option Database Vault</span>
-                                <span class="small fw-bold text-dark">Identifiants Gestionnaire</span>
+                                <span class="badge bg-secondary me-2">🛡️ Database Vault</span>
+                                <span class="small fw-bold text-dark">Identifiants Gestionnaire (Obligatoire sous Database Vault)</span>
                             </div>
                             <div class="text-muted extra-small mb-2" style="font-size: 0.8rem;">
-                                Requis sous Database Vault car le compte SYS ne peut pas altérer directement les comptes communs.
+                                Requis pour verrouiller un compte commun dans toute la CDB (<code>CDB$ROOT</code> et PDBs). Le compte SYS n'a pas les droits sous Database Vault.
                             </div>
                             <div class="row g-2">
                                 <div class="col-sm-6">
                                     <label class="form-label small fw-semibold mb-1">Compte Vault Manager :</label>
-                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="C##VOLTMANAGER">
+                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="<?= e($sessVaultUser ?: 'C##VOLTMANAGER') ?>" required>
                                 </div>
                                 <div class="col-sm-6">
                                     <label class="form-label small fw-semibold mb-1">Mot de passe Vault :</label>
-                                    <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe">
+                                    <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe C##VOLTMANAGER" required autocomplete="current-password">
                                 </div>
                             </div>
                         </div>
@@ -431,11 +445,11 @@
                         Le compte sera déverrouillé dans <code>CDB$ROOT</code> et le privilège <code>CREATE SESSION</code> sera réactivé dans toutes les PDBs ouvertes.
                     </div>
 
-                    <?php if (!empty($sessVault)): ?>
+                    <?php if ($hasActiveVault): ?>
                         <div class="alert alert-light border small py-2 mb-3">
                             <div class="d-flex align-items-center">
                                 <span class="badge bg-success me-2">🛡️ Database Vault</span>
-                                <span>Session active via <strong><?= e($sessVault) ?></strong></span>
+                                <span>Session active via <strong><?= e($sessVaultUser) ?></strong></span>
                                 <a class="ms-auto text-decoration-none small text-primary" data-bs-toggle="collapse" href="#collapseUnlockVault" role="button">
                                     Changer &darr;
                                 </a>
@@ -444,7 +458,7 @@
                                 <div class="row g-2">
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Utilisateur Vault :</label>
-                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" value="<?= e($sessVault) ?>">
+                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" value="<?= e($sessVaultUser) ?>">
                                     </div>
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Nouveau mot de passe :</label>
@@ -457,19 +471,19 @@
                         <div class="border rounded p-3 mb-3 bg-light">
                             <div class="d-flex align-items-center mb-1">
                                 <span class="badge bg-secondary me-2">🛡️ Option Database Vault</span>
-                                <span class="small fw-bold text-dark">Identifiants Gestionnaire</span>
+                                <span class="small fw-bold text-dark">Identifiants Gestionnaire (Obligatoire sous Database Vault)</span>
                             </div>
                             <div class="text-muted extra-small mb-2" style="font-size: 0.8rem;">
-                                Requis sous Database Vault car le compte SYS ne peut pas altérer directement les comptes communs.
+                                Requis pour déverrouiller un compte commun dans toute la CDB (<code>CDB$ROOT</code> et PDBs). Le compte SYS n'a pas les droits sous Database Vault.
                             </div>
                             <div class="row g-2">
                                 <div class="col-sm-6">
                                     <label class="form-label small fw-semibold mb-1">Compte Vault Manager :</label>
-                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="C##VOLTMANAGER">
+                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="<?= e($sessVaultUser ?: 'C##VOLTMANAGER') ?>" required>
                                 </div>
                                 <div class="col-sm-6">
                                     <label class="form-label small fw-semibold mb-1">Mot de passe Vault :</label>
-                                    <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe">
+                                    <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe C##VOLTMANAGER" required autocomplete="current-password">
                                 </div>
                             </div>
                         </div>

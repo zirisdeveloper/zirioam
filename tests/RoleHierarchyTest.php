@@ -26,7 +26,7 @@ class RoleHierarchyTest
         }
         echo "  [PASS] Conventions de nommage exactes : C##USER1 <-> C##RL_USER1 <-> RL_USER1.\n";
 
-        // 2. Test Règle 1 & 2 : Ordres SQL de création commune dans CDB$ROOT
+        // 2. Test Règle 1 & 2 : Ordres SQL de création commune dans CDB$ROOT (Sans CREATE SESSION dans CDB$ROOT)
         $base = 'USER1';
         $commonUser = 'C##' . $base;
         $commonRole = 'C##RL_' . $base;
@@ -34,15 +34,17 @@ class RoleHierarchyTest
         $cdbOrders = [
             "CREATE USER {$commonUser} IDENTIFIED BY \"Temp#Pwd2026\" PASSWORD EXPIRE CONTAINER = ALL",
             "CREATE ROLE {$commonRole} CONTAINER = ALL",
-            "GRANT CONNECT TO {$commonRole} CONTAINER = ALL",
             "GRANT {$commonRole} TO {$commonUser} CONTAINER = ALL",
             "ALTER USER {$commonUser} DEFAULT ROLE ALL CONTAINER = ALL",
         ];
 
         assert(strpos($cdbOrders[1], 'CONTAINER = ALL') !== false, "Rôle commun créé avec CONTAINER=ALL");
-        assert(strpos($cdbOrders[2], 'GRANT CONNECT TO C##RL_USER1 CONTAINER = ALL') !== false, "Privilège CONNECT accordé au rôle commun");
-        assert(strpos($cdbOrders[3], 'GRANT C##RL_USER1 TO C##USER1 CONTAINER = ALL') !== false, "Rôle commun accordé à l'utilisateur");
-        echo "  [PASS] Validation des ordres CDB\$ROOT (Règles 1 et 2).\n";
+        assert(strpos($cdbOrders[2], 'GRANT C##RL_USER1 TO C##USER1 CONTAINER = ALL') !== false, "Rôle commun accordé à l'utilisateur");
+        // Règle d'or de sécurité ZIRIOAM : Aucun privilège CONNECT ou CREATE SESSION n'est accordé dans CDB$ROOT
+        foreach ($cdbOrders as $ord) {
+            assert(strpos($ord, 'GRANT CONNECT') === false && strpos($ord, 'CREATE SESSION') === false, "CDB\$ROOT ne doit contenir aucun privilège CREATE SESSION");
+        }
+        echo "  [PASS] Validation des ordres CDB\$ROOT (Règles 1 et 2 - Connexion interdite dans CDB\$ROOT).\n";
 
         // 3. Test Règle 3 : Ordres SQL dans la PDB locale
         $localRole = 'RL_' . $base;

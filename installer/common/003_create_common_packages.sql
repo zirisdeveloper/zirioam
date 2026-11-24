@@ -158,14 +158,14 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
                 IF SQLCODE != -1921 THEN RAISE; END IF;
         END;
 
-        -- 3. Attribution du rôle CONNECT au rôle commun (Règle 2)
-        EXECUTE IMMEDIATE 'GRANT CONNECT TO ' || v_common_role || ' CONTAINER = ALL';
+        -- 3. Règle de sécurité ZIRIOAM : Aucun privilège CONNECT ou CREATE SESSION n'est accordé dans CDB$ROOT.
+        -- Le développeur n'aura le privilège CREATE SESSION que localement dans la PDB où un accès lui est attribué.
 
         -- 4. Attribution du rôle commun au compte utilisateur commun
         EXECUTE IMMEDIATE 'GRANT ' || v_common_role || ' TO ' || v_oracle_user || ' CONTAINER = ALL';
         EXECUTE IMMEDIATE 'ALTER USER ' || v_oracle_user || ' DEFAULT ROLE ALL CONTAINER = ALL';
 
-        log_audit('PROVISION_ORACLE_ACCOUNT', v_oracle_user, 'Création compte et rôle commun ' || v_common_role || ' (CONNECT)', 'SUCCESS', p_dba_user, p_client_ip);
+        log_audit('PROVISION_ORACLE_ACCOUNT', v_oracle_user, 'Création compte et rôle commun ' || v_common_role || ' (Accès CDB$ROOT désactivé)', 'SUCCESS', p_dba_user, p_client_ip);
     EXCEPTION
         WHEN OTHERS THEN
             log_audit('PROVISION_ORACLE_ACCOUNT', v_oracle_user, 'Erreur création : ' || SQLERRM, 'FAILED', p_dba_user, p_client_ip);
