@@ -347,31 +347,51 @@ class DeveloperService
         $commonRole = 'C##RL_' . $norm;
 
         return $this->executeInCdbRoot(function() use ($oracleUser, $commonRole) {
-            // 1. Créer le rôle commun si inexistant
+            $grantErr = null;
+            $applyStatements = function(\App\Database\OracleConnection $conn) use ($oracleUser, $commonRole) {
+                try {
+                    $conn->executeDdl("CREATE ROLE {$commonRole} CONTAINER = ALL");
+                } catch (\Throwable $e) {
+                    // Ignorer uniquement ORA-01921 (rôle déjà existant)
+                    $code = method_exists($e, 'getOracleCode') ? (int)$e->getOracleCode() : 0;
+                    if ($code !== 1921 && strpos($e->getMessage(), 'ORA-01921') === false) {
+                        throw $e;
+                    }
+                }
+
+                $conn->executeDdl("GRANT CREATE SESSION TO {$commonRole} CONTAINER = ALL");
+                $conn->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
+                try {
+                    $conn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
+                } catch (\Throwable $e) {}
+            };
+
             try {
-                $this->db->executeDdl("CREATE ROLE {$commonRole} CONTAINER = ALL");
+                $applyStatements($this->db);
+                return true;
             } catch (\Throwable $e) {
-                // Existe déjà (ORA-01921)
+                $grantErr = $e;
             }
 
-            // 2. Accorder le privilège CREATE SESSION au rôle commun C##RL_<USER>
-            // Permet la connexion en CDB$ROOT pour que le développeur puisse renouveler son mot de passe
-            // de façon autonome sans nécessiter de comptes administrateurs stockés sur le serveur
+            // Repli via connexion Database Vault active si le DBA principal est restreint
             try {
-                $this->db->executeDdl("GRANT CREATE SESSION TO {$commonRole} CONTAINER = ALL");
-            } catch (\Throwable $e) {}
+                $vaultConn = (new OracleConnectionService())->getVaultConnection();
+                if ($vaultConn) {
+                    try {
+                        if ($vaultConn->getCurrentContainer() !== 'CDB$ROOT') {
+                            $vaultConn->switchContainer('CDB$ROOT');
+                        }
+                        $applyStatements($vaultConn);
+                        return true;
+                    } finally {
+                        $vaultConn->close();
+                    }
+                }
+            } catch (\Throwable $ve) {
+                $grantErr = $ve;
+            }
 
-            // 3. Attribuer le rôle commun au compte utilisateur
-            try {
-                $this->db->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
-            } catch (\Throwable $e) {}
-
-            // 4. Définir comme rôle par défaut
-            try {
-                $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
-            } catch (\Throwable $e) {}
-
-            return true;
+            throw $grantErr ?: new \RuntimeException("Impossible d'accorder CREATE SESSION au rôle {$commonRole}.");
         });
     }
 
@@ -388,14 +408,24 @@ class DeveloperService
      */
     public function grantCdbSessionToAllDevelopers(): int
     {
-        $developers = $this->getDevelopers();
+        $developers = $this->getAllDevelopers('', 'ACTIVE');
         $count = 0;
+        $lastError = null;
         foreach ($developers as $dev) {
+            // Ignorer ceux dont le compte Oracle commun n'est pas encore créé
+            if (empty($dev['ORACLE_ACCOUNT_EXISTS'])) {
+                continue;
+            }
             try {
                 if ($this->grantCdbRootSession($dev['USERNAME'])) {
                     $count++;
                 }
-            } catch (\Throwable $e) {}
+            } catch (\Throwable $e) {
+                $lastError = $e;
+            }
+        }
+        if ($count === 0 && $lastError !== null) {
+            throw $lastError;
         }
         return $count;
     }

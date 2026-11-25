@@ -715,19 +715,10 @@ class AccessProvisioningService
                 // Existe déjà (ORA-01921)
             }
 
-            // 2. Règle de sécurité ZIRIOAM : Aucun privilège CONNECT ou CREATE SESSION n'est accordé dans CDB$ROOT.
-            // On s'assure qu'aucun droit de connexion résiduel n'existe au niveau CDB$ROOT
+            // 2. Accorder CREATE SESSION au rôle commun C##RL_<USER> dans toute la CDB
+            // Nécessaire pour les opérations self-service (/UpdPwd et /selfservice)
             try {
-                $this->db->executeDdl("REVOKE CONNECT FROM {$commonRole} CONTAINER = ALL");
-            } catch (\Throwable $e) {}
-            try {
-                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$commonUser} CONTAINER = ALL");
-            } catch (\Throwable $e) {}
-            try {
-                $this->db->executeDdl("REVOKE CREATE SESSION FROM {$commonUser} CONTAINER = CURRENT");
-            } catch (\Throwable $e2) {}
-            try {
-                $this->db->executeDdl("REVOKE CONNECT FROM {$commonUser} CONTAINER = ALL");
+                $this->db->executeDdl("GRANT CREATE SESSION TO {$commonRole} CONTAINER = ALL");
             } catch (\Throwable $e) {}
 
             // 3. Attribuer le rôle commun au compte utilisateur

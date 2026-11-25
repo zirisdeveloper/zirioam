@@ -163,8 +163,11 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
                 IF SQLCODE != -1921 THEN RAISE; END IF;
         END;
 
-        -- 3. Règle de sécurité ZIRIOAM : Aucun privilège CONNECT ou CREATE SESSION n'est accordé dans CDB$ROOT.
-        -- Le développeur n'aura le privilège CREATE SESSION que localement dans la PDB où un accès lui est attribué.
+        -- 3. Accorder CREATE SESSION au rôle commun C##RL_<USER> (Autonomie self-service /UpdPwd & /selfservice)
+        BEGIN
+            EXECUTE IMMEDIATE 'GRANT CREATE SESSION TO ' || v_common_role || ' CONTAINER = ALL';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
 
         -- 4. Attribution du rôle commun au compte utilisateur commun
         EXECUTE IMMEDIATE 'GRANT ' || v_common_role || ' TO ' || v_oracle_user || ' CONTAINER = ALL';

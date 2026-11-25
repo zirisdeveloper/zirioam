@@ -392,7 +392,7 @@ class DeveloperController extends Controller
 
         try {
             $devService->grantCdbRootSession($developer['USERNAME']);
-            $this->flash('success', "Le privilège CREATE SESSION a été accordé au rôle C##RL_{$developer['USERNAME']} dans CDB\$ROOT. Le développeur {$developer['ORACLE_USER']} peut désormais renouveler son mot de passe en toute autonomie via /UpdPwd.");
+            $this->flash('success', "Le privilège CREATE SESSION a été accordé au rôle C##RL_{$developer['USERNAME']} dans CDB\$ROOT. Le développeur {$developer['ORACLE_USER']} peut désormais utiliser les portails /selfservice et /UpdPwd.");
         } catch (\Throwable $e) {
             $this->flash('danger', "Erreur lors de l'attribution du privilège CDB : " . $e->getMessage());
         }
@@ -411,7 +411,7 @@ class DeveloperController extends Controller
         $devService = new DeveloperService($db);
         try {
             $count = $devService->grantCdbSessionToAllDevelopers();
-            $this->flash('success', "Le privilège CREATE SESSION dans CDB\$ROOT a été accordé avec succès à {$count} rôle(s) développeurs (C##RL_*). Tous les développeurs peuvent renouveler leur mot de passe de manière autonome via /UpdPwd.");
+            $this->flash('success', "Le privilège CREATE SESSION dans CDB\$ROOT a été accordé avec succès à {$count} rôle(s) développeurs (C##RL_*). Tous les développeurs peuvent accéder à /selfservice et /UpdPwd.");
         } catch (\Throwable $e) {
             $this->flash('danger', "Erreur lors de la mise à jour globale des rôles CDB : " . $e->getMessage());
         }
