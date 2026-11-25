@@ -383,8 +383,8 @@ CREATE OR REPLACE PACKAGE ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AUTHID DEFINER AS
     -- Exécute un ordre DDL validé sans accorder de privilège ANY au développeur
     PROCEDURE execute_controlled_ddl (
         p_target_schema IN VARCHAR2,
-        p_operation     IN VARCHAR2, -- CREATE, ALTER, DROP
-        p_object_type   IN VARCHAR2, -- TABLE, VIEW, INDEX, SEQUENCE, PROCEDURE, FUNCTION, PACKAGE
+        p_operation     IN VARCHAR2, -- CREATE, ADD, ALTER, REPLACE, DROP
+        p_object_type   IN VARCHAR2, -- TABLE, VIEW, INDEX, SEQUENCE, PROCEDURE, FUNCTION, PACKAGE, PACKAGE BODY, TRIGGER, TYPE, TYPE BODY, SYNONYM, CONSTRAINT
         p_object_name   IN VARCHAR2,
         p_ddl_statement IN CLOB,
         p_out_status    OUT VARCHAR2,
@@ -424,17 +424,23 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AS
         v_obj_name := UPPER(TRIM(p_object_name));
 
         -- 2. Validation des types d'objets autorisés
-        IF v_obj_type NOT IN ('TABLE', 'VIEW', 'INDEX', 'SEQUENCE', 'PROCEDURE', 'FUNCTION', 'PACKAGE') THEN
+        IF v_obj_type NOT IN (
+            'TABLE', 'VIEW', 'INDEX', 'SEQUENCE', 'PROCEDURE', 'FUNCTION', 'PACKAGE',
+            'CONSTRAINT', 'PACKAGE BODY', 'TRIGGER', 'TYPE', 'TYPE BODY', 'SYNONYM'
+        ) THEN
             p_out_status := 'REJECTED';
             p_out_error  := 'Type d''objet non autorisé : ' || v_obj_type;
             RETURN;
         END IF;
 
         -- 3. Vérification des autorisations dans la matrice ZIRIOAM_DEVELOPER_ACCESS
-        IF v_op = 'CREATE' THEN
+        -- CREATE / ADD (ex: ADD pour CONSTRAINT) => CAN_DDL_CREATE
+        -- ALTER / REPLACE (ex: REPLACE pour PROCEDURE, FUNCTION, PACKAGE, PACKAGE BODY, TYPE, TYPE BODY, SYNONYM, TRIGGER, VIEW) => CAN_DDL_ALTER
+        -- DROP => CAN_DDL_DROP
+        IF v_op IN ('CREATE', 'ADD') THEN
             SELECT COUNT(*) INTO v_has_access FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS
             WHERE USERNAME = v_caller AND TARGET_SCHEMA = v_schema AND CAN_DDL_CREATE = 1 AND STATUS = 'ACTIVE';
-        ELSIF v_op = 'ALTER' THEN
+        ELSIF v_op IN ('ALTER', 'REPLACE') THEN
             SELECT COUNT(*) INTO v_has_access FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS
             WHERE USERNAME = v_caller AND TARGET_SCHEMA = v_schema AND CAN_DDL_ALTER = 1 AND STATUS = 'ACTIVE';
         ELSIF v_op = 'DROP' THEN

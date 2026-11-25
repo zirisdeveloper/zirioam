@@ -61,8 +61,8 @@
                         <th>Développeur</th>
                         <th>Schéma Cible</th>
                         <th>Rôle DML (Données)</th>
-                        <th class="text-center">DDL CREATE</th>
-                        <th class="text-center">DDL ALTER</th>
+                        <th class="text-center">DDL CREATE / ADD</th>
+                        <th class="text-center">DDL ALTER / REPLACE</th>
                         <th class="text-center">DDL DROP</th>
                         <th>Statut</th>
                         <th class="text-end">Actions</th>
@@ -203,7 +203,7 @@
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" name="can_ddl_create" value="1" id="chkCreate">
                                     <label class="form-check-label fw-semibold" for="chkCreate">
-                                        CREATE TABLE / VIEW / ...
+                                        CREATE/ADD OBJECTS
                                     </label>
                                 </div>
                             </div>
@@ -211,7 +211,7 @@
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" name="can_ddl_alter" value="1" id="chkAlter">
                                     <label class="form-check-label fw-semibold" for="chkAlter">
-                                        ALTER TABLE / ...
+                                        ALTER/REPLACE OBJECTS
                                     </label>
                                 </div>
                             </div>
@@ -219,13 +219,13 @@
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" name="can_ddl_drop" value="1" id="chkDrop">
                                     <label class="form-check-label fw-semibold" for="chkDrop">
-                                        DROP TABLE / ...
+                                        DROP OBJECTS
                                     </label>
                                 </div>
                             </div>
                         </div>
                         <div class="small text-muted mt-2">
-                            Ces droits s'exécutent via le moteur contrôlé <code>PKG_ZIRIOAM_DDL_ENGINE</code> sans octroi de privilèges <code>ANY</code>.
+                            Ces droits s'exécutent via le moteur contrôlé <code>PKG_ZIRIOAM_DDL_ENGINE</code> (TABLE, VIEW, INDEX, SEQUENCE, CONSTRAINT, PROCEDURE, FUNCTION, PACKAGE, PACKAGE BODY, TRIGGER, TYPE, TYPE BODY, SYNONYM) sans octroi de privilèges <code>ANY</code>.
                         </div>
                     </div>
                 </div>

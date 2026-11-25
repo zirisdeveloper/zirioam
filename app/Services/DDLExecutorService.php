@@ -36,11 +36,21 @@ class DDLExecutorService
         $objType = strtoupper(trim($objectType));
         $objName = strtoupper(trim($objectName));
 
+        $allowedObjectTypes = [
+            'TABLE', 'VIEW', 'INDEX', 'SEQUENCE', 'PROCEDURE', 'FUNCTION', 'PACKAGE',
+            'CONSTRAINT', 'PACKAGE BODY', 'TRIGGER', 'TYPE', 'TYPE BODY', 'SYNONYM',
+        ];
+        if (!in_array($objType, $allowedObjectTypes, true)) {
+            $msg = "Type d'objet DDL non autorisé : {$objType}.";
+            $this->logExecution($oracleUser, $schema, $op, $objType, $objName, $ddlStatement, 'REJECTED', 0, $msg);
+            return ['status' => 'REJECTED', 'error' => $msg];
+        }
+
         // 1. Validation de la matrice d'accès
         $colCheck = null;
-        if ($op === 'CREATE') {
+        if (in_array($op, ['CREATE', 'ADD'], true)) {
             $colCheck = 'CAN_DDL_CREATE';
-        } elseif ($op === 'ALTER') {
+        } elseif (in_array($op, ['ALTER', 'REPLACE'], true)) {
             $colCheck = 'CAN_DDL_ALTER';
         } elseif ($op === 'DROP') {
             $colCheck = 'CAN_DDL_DROP';

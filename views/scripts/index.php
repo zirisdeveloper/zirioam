@@ -115,7 +115,9 @@
                             <label for="operation" class="form-label fw-semibold">Opération DDL :</label>
                             <select name="operation" id="operation" class="form-select" required>
                                 <option value="CREATE">CREATE</option>
+                                <option value="ADD">ADD (CONSTRAINT)</option>
                                 <option value="ALTER">ALTER</option>
+                                <option value="REPLACE">REPLACE (PROC / FUNC / PKG / TRIG / SYN)</option>
                                 <option value="DROP">DROP</option>
                             </select>
                         </div>
@@ -126,9 +128,15 @@
                                 <option value="VIEW">VIEW</option>
                                 <option value="INDEX">INDEX</option>
                                 <option value="SEQUENCE">SEQUENCE</option>
+                                <option value="CONSTRAINT">CONSTRAINT</option>
                                 <option value="PROCEDURE">PROCEDURE</option>
                                 <option value="FUNCTION">FUNCTION</option>
                                 <option value="PACKAGE">PACKAGE</option>
+                                <option value="PACKAGE BODY">PACKAGE BODY</option>
+                                <option value="TRIGGER">TRIGGER</option>
+                                <option value="TYPE">TYPE</option>
+                                <option value="TYPE BODY">TYPE BODY</option>
+                                <option value="SYNONYM">SYNONYM</option>
                             </select>
                         </div>
                         <div class="col-md-4">
