@@ -98,3 +98,4 @@ class AdminAuthTest
         echo "  [PASS] Isolation AdminAuthMiddleware et AuthMiddleware validée.\n";
     }
 }
+

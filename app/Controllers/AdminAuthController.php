@@ -162,3 +162,4 @@ class AdminAuthController extends Controller
         return $this->session->has('oracle_session') ? '/dashboard' : '/servers';
     }
 }
+

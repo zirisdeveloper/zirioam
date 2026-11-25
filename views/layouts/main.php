@@ -24,9 +24,6 @@
                 <!-- Liens de navigation fonctionnels -->
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
-                        <a class="nav-link" href="<?= zirioam_url('/dashboard') ?>">Tableau de bord</a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link" href="<?= zirioam_url('/databases') ?>">Bases CDB / PDB</a>
                     </li>
                     <li class="nav-item">
