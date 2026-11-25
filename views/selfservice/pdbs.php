@@ -24,32 +24,29 @@
         </div>
     <?php endif; ?>
 
-    <?php if (!empty($notDeployedPdbs)): ?>
+    <?php if (empty($pdbs) && !empty($diagnosticPdbs)): ?>
         <div class="alert alert-warning shadow-sm mb-4">
-            <strong>⚠️ Composants Self-Service non déployés sur <?= count($notDeployedPdbs) ?> PDB(s) :</strong>
-            <div class="small mt-1">
-                Demandez à l'administrateur ZIRI OAM d'ouvrir <strong>Maintenance &rarr; Redéployer</strong> (en cochant <em>Remplacer les packages</em> et <em>Réappliquer les droits</em>) sur les PDBs cibles (ex: <code>PDBTEST</code>).
+            <strong>⚠️ Diagnostic de découverte PDB :</strong> <?= (int)($totalOpenPdbs ?? count($diagnosticPdbs)) ?> PDB(s) ouverte(s) vérifiée(s), mais aucune n'a retourné d'accès actif pour votre compte (<code><?= e($selfServiceSession['username'] ?? '') ?></code>).
+            <div class="table-responsive mt-2">
+                <table class="table table-sm table-bordered bg-white mb-0 small">
+                    <thead>
+                        <tr>
+                            <th>PDB</th>
+                            <th>Service testé</th>
+                            <th>Statut / Détail Oracle</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($diagnosticPdbs as $dp): ?>
+                            <tr class="<?= !empty($dp['ZIRIOAM_DEPLOYED']) ? 'table-info' : '' ?>">
+                                <td class="font-monospace fw-bold"><?= e($dp['PDB_NAME']) ?></td>
+                                <td class="font-monospace"><?= e($dp['SERVICE_NAME']) ?></td>
+                                <td><?= e($dp['STATUS_NOTE'] ?? '') ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
             </div>
-            <details class="mt-2 small">
-                <summary class="fw-semibold" style="cursor: pointer;">Voir le détail technique (<?= count($notDeployedPdbs) ?>)</summary>
-                <ul class="mb-0 mt-1">
-                    <?php foreach ($notDeployedPdbs as $nd): ?>
-                        <li class="font-monospace"><?= e($nd) ?></li>
-                    <?php endforeach; ?>
-                </ul>
-            </details>
-        </div>
-    <?php elseif (empty($pdbs) && !empty($diagnosticPdbs)): ?>
-        <div class="alert alert-info shadow-sm mb-4">
-            <strong>ℹ️ <?= (int)($totalOpenPdbs ?? count($diagnosticPdbs)) ?> PDB(s) ouverte(s) détectée(s), mais aucun accès actif trouvé pour votre compte.</strong>
-            <details class="mt-2 small">
-                <summary class="fw-semibold" style="cursor: pointer;">Voir le détail par PDB</summary>
-                <ul class="mb-0 mt-1">
-                    <?php foreach ($diagnosticPdbs as $dp): ?>
-                        <li><strong class="font-monospace"><?= e($dp['PDB_NAME']) ?></strong> (service <code><?= e($dp['SERVICE_NAME']) ?></code>) : <?= e($dp['STATUS_NOTE'] ?? '') ?></li>
-                    <?php endforeach; ?>
-                </ul>
-            </details>
         </div>
     <?php endif; ?>
 

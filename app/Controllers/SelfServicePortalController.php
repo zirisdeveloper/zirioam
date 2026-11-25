@@ -106,6 +106,9 @@ class SelfServicePortalController extends Controller
                     $diagnosticPdbs[] = $p;
                 }
             }
+            usort($diagnosticPdbs, static function (array $a, array $b): int {
+                return (!empty($b['ZIRIOAM_DEPLOYED']) ? 1 : 0) <=> (!empty($a['ZIRIOAM_DEPLOYED']) ? 1 : 0);
+            });
         } catch (\Throwable $e) {
             $discoverError = $e->getMessage();
         }
