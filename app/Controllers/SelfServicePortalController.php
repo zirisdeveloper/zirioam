@@ -88,18 +88,33 @@ class SelfServicePortalController extends Controller
     public function pdbs(Request $request): Response
     {
         $accessiblePdbs = [];
+        $diagnosticPdbs = [];
+        $notDeployedPdbs = [];
         $discoverError = null;
+        $totalOpenPdbs = 0;
+
         try {
             $allPdbs = $this->portalService->discoverAccessiblePdbs();
-            $accessiblePdbs = array_values(array_filter($allPdbs, static function (array $p): bool {
-                return !empty($p['ACCESSIBLE']);
-            }));
+            $totalOpenPdbs = count($allPdbs);
+            foreach ($allPdbs as $p) {
+                if (!empty($p['ACCESSIBLE'])) {
+                    $accessiblePdbs[] = $p;
+                } else {
+                    if (empty($p['ZIRIOAM_DEPLOYED'])) {
+                        $notDeployedPdbs[] = $p['PDB_NAME'] . ' (' . ($p['STATUS_NOTE'] ?? 'non déployé') . ')';
+                    }
+                    $diagnosticPdbs[] = $p;
+                }
+            }
         } catch (\Throwable $e) {
             $discoverError = $e->getMessage();
         }
 
         return $this->render('selfservice/pdbs', [
             'pdbs' => $accessiblePdbs,
+            'diagnosticPdbs' => $diagnosticPdbs,
+            'notDeployedPdbs' => $notDeployedPdbs,
+            'totalOpenPdbs' => $totalOpenPdbs,
             'discoverError' => $discoverError,
             'activeNav' => 'pdbs',
         ], 'selfservice_portal');

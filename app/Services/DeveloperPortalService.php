@@ -301,7 +301,7 @@ class DeveloperPortalService
                     $msg = $ae->getMessage();
                     if (strpos($msg, 'ORA-00942') !== false || strpos($msg, 'ORA-06550') !== false || strpos($msg, 'PLS-00201') !== false || strpos($msg, 'PLS-00302') !== false) {
                         $entry['ZIRIOAM_DEPLOYED'] = false;
-                        $entry['STATUS_NOTE'] = "Package Self-Service non déployé sur cette PDB";
+                        $entry['STATUS_NOTE'] = "Package Self-Service non déployé sur cette PDB ({$msg})";
                     } else {
                         $entry['STATUS_NOTE'] = $msg;
                     }
@@ -309,7 +309,7 @@ class DeveloperPortalService
                     $pdbConn->close();
                 }
             } catch (\Throwable $ce) {
-                $entry['STATUS_NOTE'] = "Connexion PDB non autorisée";
+                $entry['STATUS_NOTE'] = "Connexion PDB impossible : " . $ce->getMessage();
             }
 
             $result[] = $entry;

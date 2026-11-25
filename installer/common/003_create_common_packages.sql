@@ -257,7 +257,11 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
                    NAME AS PDB_NAME,
                    OPEN_MODE,
                    RESTRICTED,
-                   LOWER(NAME) AS SERVICE_NAME
+                   CASE
+                       WHEN SYS_CONTEXT('USERENV', 'DB_DOMAIN') IS NOT NULL
+                       THEN LOWER(NAME) || '.' || LOWER(SYS_CONTEXT('USERENV', 'DB_DOMAIN'))
+                       ELSE LOWER(NAME)
+                   END AS SERVICE_NAME
             FROM V$PDBS
             WHERE NAME <> 'PDB$SEED'
               AND OPEN_MODE = 'READ WRITE'
@@ -291,7 +295,11 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_DEV_DISCOVERY AS
                    NAME AS PDB_NAME,
                    OPEN_MODE,
                    RESTRICTED,
-                   LOWER(NAME) AS SERVICE_NAME
+                   CASE
+                       WHEN SYS_CONTEXT('USERENV', 'DB_DOMAIN') IS NOT NULL
+                       THEN LOWER(NAME) || '.' || LOWER(SYS_CONTEXT('USERENV', 'DB_DOMAIN'))
+                       ELSE LOWER(NAME)
+                   END AS SERVICE_NAME
             FROM V$PDBS
             WHERE NAME <> 'PDB$SEED'
               AND OPEN_MODE = 'READ WRITE'

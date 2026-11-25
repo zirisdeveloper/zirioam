@@ -24,6 +24,35 @@
         </div>
     <?php endif; ?>
 
+    <?php if (!empty($notDeployedPdbs)): ?>
+        <div class="alert alert-warning shadow-sm mb-4">
+            <strong>⚠️ Composants Self-Service non déployés sur <?= count($notDeployedPdbs) ?> PDB(s) :</strong>
+            <div class="small mt-1">
+                Demandez à l'administrateur ZIRI OAM d'ouvrir <strong>Maintenance &rarr; Redéployer</strong> (en cochant <em>Remplacer les packages</em> et <em>Réappliquer les droits</em>) sur les PDBs cibles (ex: <code>PDBTEST</code>).
+            </div>
+            <details class="mt-2 small">
+                <summary class="fw-semibold" style="cursor: pointer;">Voir le détail technique (<?= count($notDeployedPdbs) ?>)</summary>
+                <ul class="mb-0 mt-1">
+                    <?php foreach ($notDeployedPdbs as $nd): ?>
+                        <li class="font-monospace"><?= e($nd) ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </details>
+        </div>
+    <?php elseif (empty($pdbs) && !empty($diagnosticPdbs)): ?>
+        <div class="alert alert-info shadow-sm mb-4">
+            <strong>ℹ️ <?= (int)($totalOpenPdbs ?? count($diagnosticPdbs)) ?> PDB(s) ouverte(s) détectée(s), mais aucun accès actif trouvé pour votre compte.</strong>
+            <details class="mt-2 small">
+                <summary class="fw-semibold" style="cursor: pointer;">Voir le détail par PDB</summary>
+                <ul class="mb-0 mt-1">
+                    <?php foreach ($diagnosticPdbs as $dp): ?>
+                        <li><strong class="font-monospace"><?= e($dp['PDB_NAME']) ?></strong> (service <code><?= e($dp['SERVICE_NAME']) ?></code>) : <?= e($dp['STATUS_NOTE'] ?? '') ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </details>
+        </div>
+    <?php endif; ?>
+
     <!-- Tableau des PDBs autorisées (Format identique à la vue Bases CDB / PDB) -->
     <div class="card border-0 shadow-sm">
         <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
