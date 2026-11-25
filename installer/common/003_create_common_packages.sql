@@ -266,3 +266,37 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
 
 END PKG_ZIRIOAM_COMMON_OPS;
 /
+
+-- ---------------------------------------------------------------------
+-- Package dédié en lecture seule à la découverte des PDBs ouvertes
+-- par les développeurs connectés au portail Self-Service (/selfservice)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE PACKAGE C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_DEV_DISCOVERY AUTHID DEFINER AS
+
+    PROCEDURE get_open_pdbs (
+        p_cursor OUT SYS_REFCURSOR
+    );
+
+END PKG_ZIRIOAM_DEV_DISCOVERY;
+/
+
+CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_DEV_DISCOVERY AS
+
+    PROCEDURE get_open_pdbs (
+        p_cursor OUT SYS_REFCURSOR
+    ) IS
+    BEGIN
+        OPEN p_cursor FOR
+            SELECT CON_ID,
+                   NAME AS PDB_NAME,
+                   OPEN_MODE,
+                   RESTRICTED,
+                   LOWER(NAME) AS SERVICE_NAME
+            FROM V$PDBS
+            WHERE NAME <> 'PDB$SEED'
+              AND OPEN_MODE = 'READ WRITE'
+            ORDER BY NAME;
+    END get_open_pdbs;
+
+END PKG_ZIRIOAM_DEV_DISCOVERY;
+/

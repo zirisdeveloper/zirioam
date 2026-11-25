@@ -6,15 +6,19 @@
 -- =====================================================================
 
 BEGIN
-    -- Droits d'exécution sur le package d'orchestration commune
+    -- Droits d'exécution sur le package d'orchestration commune (uniquement DBA en CDB$ROOT)
     BEGIN
-        EXECUTE IMMEDIATE 'GRANT EXECUTE ON C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS TO DBA CONTAINER = ALL';
+        EXECUTE IMMEDIATE 'GRANT EXECUTE ON C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS TO DBA';
     EXCEPTION WHEN OTHERS THEN NULL;
     END;
     BEGIN
-        EXECUTE IMMEDIATE 'GRANT EXECUTE ON C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS TO PUBLIC CONTAINER = ALL';
+        EXECUTE IMMEDIATE 'REVOKE EXECUTE ON C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS FROM PUBLIC';
     EXCEPTION WHEN OTHERS THEN NULL;
     END;
+
+    -- Droits d'exécution en lecture seule sur le package de découverte PDB (/selfservice)
+    -- Remarque Oracle 19c : pas de clause CONTAINER=ALL sur un objet schéma personnalisé (sinon ORA-65040)
+    EXECUTE IMMEDIATE 'GRANT EXECUTE ON C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_DEV_DISCOVERY TO PUBLIC';
 
     -- Insertion ou mise à jour de l'état d'installation CDB
     MERGE INTO C##ZIRIOAM_ADMIN.ZIRIOAM_INSTALLATION dest

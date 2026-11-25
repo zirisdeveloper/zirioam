@@ -212,30 +212,36 @@ class DeveloperPortalService
         $discoveryFailure = null;
         $rootConn = $this->connectToRoot();
         try {
-            // 1. Méthode recommandée : Package CDB AUTHID DEFINER
+            // 1. Méthode recommandée : Package CDB dédié lecture seule AUTHID DEFINER
             try {
                 $openPdbs = $rootConn->queryRefCursor(
-                    "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS.get_open_pdbs(:cursor); END;"
+                    "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_DEV_DISCOVERY.get_open_pdbs(:cursor); END;"
                 );
             } catch (\Throwable $e) {
-                // 2. Fallback si droits directs en lecture du dictionnaire
+                // 2. Fallback PKG_ZIRIOAM_COMMON_OPS ou dictionnaire
                 try {
-                    $openPdbs = $rootConn->query(
-                        "SELECT CON_ID, NAME AS PDB_NAME, OPEN_MODE, RESTRICTED, LOWER(NAME) AS SERVICE_NAME
-                         FROM V\$PDBS
-                         WHERE NAME <> 'PDB\$SEED' AND OPEN_MODE = 'READ WRITE'
-                         ORDER BY NAME"
+                    $openPdbs = $rootConn->queryRefCursor(
+                        "BEGIN C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS.get_open_pdbs(:cursor); END;"
                     );
-                } catch (\Throwable $e2) {
+                } catch (\Throwable $e1) {
                     try {
                         $openPdbs = $rootConn->query(
-                            "SELECT CON_ID, PDB_NAME, 'READ WRITE' AS OPEN_MODE, 'NO' AS RESTRICTED, LOWER(PDB_NAME) AS SERVICE_NAME
-                             FROM ALL_PDBS
-                             WHERE PDB_NAME <> 'PDB\$SEED'
-                             ORDER BY PDB_NAME"
+                            "SELECT CON_ID, NAME AS PDB_NAME, OPEN_MODE, RESTRICTED, LOWER(NAME) AS SERVICE_NAME
+                             FROM V\$PDBS
+                             WHERE NAME <> 'PDB\$SEED' AND OPEN_MODE = 'READ WRITE'
+                             ORDER BY NAME"
                         );
-                    } catch (\Throwable $e3) {
-                        $discoveryFailure = $e->getMessage();
+                    } catch (\Throwable $e2) {
+                        try {
+                            $openPdbs = $rootConn->query(
+                                "SELECT CON_ID, PDB_NAME, 'READ WRITE' AS OPEN_MODE, 'NO' AS RESTRICTED, LOWER(PDB_NAME) AS SERVICE_NAME
+                                 FROM ALL_PDBS
+                                 WHERE PDB_NAME <> 'PDB\$SEED'
+                                 ORDER BY PDB_NAME"
+                            );
+                        } catch (\Throwable $e3) {
+                            $discoveryFailure = $e->getMessage();
+                        }
                     }
                 }
             }
