@@ -137,6 +137,9 @@ class RoleController extends Controller
             );
 
             // Résolution ORA-01950 : Accorder automatiquement les quotas tablespace aux développeurs associés
+            // Et si rôle APP_ALL, appliquer GRANT ALL ON obj TO user sur tous les objets du schéma cible
+            $isAllProfile = in_array(strtoupper(trim((string)($roleRow['PROFILE_TYPE'] ?? ''))), ['APP_ALL', 'ALL'], true);
+            $userGrantsCount = 0;
             try {
                 $devs = $db->query(
                     "SELECT USERNAME FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS WHERE ROLE_ID = :rid AND STATUS = 'ACTIVE'",
@@ -149,6 +152,10 @@ class RoleController extends Controller
                         $baseUser = str_starts_with($normUser, 'C##') ? substr($normUser, 3) : $normUser;
                         $localRole = 'RL_' . $baseUser;
                         $accessService->grantTablespaceQuotaForSchema($u, $roleRow['TARGET_SCHEMA'], $localRole);
+                        if ($isAllProfile) {
+                            $uRes = $accessService->grantAllSchemaObjectsToUser($roleRow['TARGET_SCHEMA'], $normUser);
+                            $userGrantsCount += count($uRes['granted'] ?? []);
+                        }
                     }
                 }
             } catch (\Throwable $qe) {}
@@ -158,10 +165,11 @@ class RoleController extends Controller
             if ($errCount > 0) {
                 $errDetails = implode(', ', array_slice($res['errors'], 0, 3));
                 $this->flash('warning', "{$count} objet(s) accordé(s), {$errCount} erreur(s) pour {$roleRow['ROLE_NAME']} : {$errDetails}");
-            } elseif ($count === 0) {
-                $this->flash('info', "Aucune table ou vue trouvée pour le schéma {$roleRow['TARGET_SCHEMA']} dans la PDB {$activePdb}.");
+            } elseif ($count === 0 && $userGrantsCount === 0) {
+                $this->flash('info', "Aucun objet éligible trouvé pour le schéma {$roleRow['TARGET_SCHEMA']} dans la PDB {$activePdb}.");
             } else {
-                $this->flash('success', "{$count} table(s)/vue(s) du schéma {$roleRow['TARGET_SCHEMA']} synchronisée(s) avec succès sur le rôle {$roleRow['ROLE_NAME']}.");
+                $extraMsg = $userGrantsCount > 0 ? " (+ {$userGrantsCount} GRANT ALL direct(s) aux développeurs attribués)" : "";
+                $this->flash('success', "{$count} objet(s) du schéma {$roleRow['TARGET_SCHEMA']} synchronisé(s) avec succès sur le rôle {$roleRow['ROLE_NAME']}{$extraMsg}.");
             }
         } catch (\Throwable $e) {
             $this->flash('danger', "Erreur lors de la synchronisation : " . $e->getMessage());

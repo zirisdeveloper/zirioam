@@ -111,6 +111,7 @@
                             <option value="APP_WRITE">APP_WRITE (Écriture : INSERT, UPDATE, DELETE)</option>
                             <option value="APP_READ_WRITE">APP_READ_WRITE (Lecture et Écriture complète)</option>
                             <option value="APP_EXECUTE">APP_EXECUTE (Exécution packages/procédures)</option>
+                            <option value="APP_ALL">APP_ALL (Accès complet : GRANT ALL sur tous les objets)</option>
                         </select>
                     </div>
 
@@ -126,7 +127,7 @@
                     </div>
 
                     <div class="alert alert-info small mb-0">
-                        ℹ️ Le nom par défaut généré est automatiquement préfixé par <code>RL_</code> (ex: <code>RL_PAIE_RW</code>). ZIRIOAM accorde automatiquement les privilèges (SELECT, INSERT, UPDATE, DELETE) sur toutes les tables existantes du schéma cible vers ce rôle.
+                        ℹ️ Le nom par défaut généré est automatiquement préfixé par <code>RL_</code> (ex: <code>RL_PAIE_RW</code> ou <code>RL_PAIE_ALL</code>). ZIRIOAM accorde automatiquement les privilèges correspondants sur les objets existants du schéma cible ; pour <strong>APP_ALL</strong>, lors de l'attribution à un développeur, un <code>GRANT ALL ON objet TO utilisateur</code> est exécuté sur les objets (TABLE, VIEW, SEQUENCE, PROCEDURE, FUNCTION, PACKAGE, TYPE, MATERIALIZED VIEW).
                     </div>
                 </div>
                 <div class="modal-footer">

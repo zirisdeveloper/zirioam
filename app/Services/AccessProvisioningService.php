@@ -74,6 +74,8 @@ class AccessProvisioningService
                 $normType = 'RW';
             } elseif ($profileType === 'APP_EXECUTE') {
                 $normType = 'EXEC';
+            } elseif ($profileType === 'APP_ALL') {
+                $normType = 'ALL';
             }
             $roleName = "RL_{$schema}_{$normType}";
         }
@@ -118,7 +120,7 @@ class AccessProvisioningService
         $this->db->switchContainer($pdbName);
 
         $roleRow = $this->db->queryOne(
-            "SELECT ROLE_ID, ROLE_NAME, TARGET_SCHEMA FROM ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES WHERE ROLE_ID = :rid",
+            "SELECT ROLE_ID, ROLE_NAME, TARGET_SCHEMA, PROFILE_TYPE FROM ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES WHERE ROLE_ID = :rid",
             ['rid' => $roleId]
         );
 
@@ -128,6 +130,7 @@ class AccessProvisioningService
 
         $roleName = $roleRow['ROLE_NAME'];
         $schema = $roleRow['TARGET_SCHEMA'];
+        $isAllProfile = in_array(strtoupper(trim((string)($roleRow['PROFILE_TYPE'] ?? ''))), ['APP_ALL', 'ALL'], true);
 
         // 1. Révoquer le rôle physique des rôles locaux des développeurs associés
         $devs = $this->db->query(
@@ -147,6 +150,10 @@ class AccessProvisioningService
             try {
                 $this->db->executeDdl("REVOKE {$roleName} FROM {$user}");
             } catch (\Throwable $e) {}
+
+            if ($isAllProfile) {
+                $this->revokeAllSchemaObjectsFromUser($schema, $normUser);
+            }
         }
 
         // 2. Dissocier de la table ZIRIOAM_DEVELOPER_ACCESS
@@ -201,6 +208,7 @@ class AccessProvisioningService
         $canSelect = in_array($profileType, ['APP_READ', 'READ', 'APP_READ_WRITE', 'RW', 'APP_ALL', 'ALL']);
         $canDml = in_array($profileType, ['APP_WRITE', 'WRITE', 'APP_READ_WRITE', 'RW', 'APP_ALL', 'ALL']);
         $canExecute = in_array($profileType, ['APP_EXECUTE', 'EXEC', 'APP_ALL', 'ALL']);
+        $isAll = in_array($profileType, ['APP_ALL', 'ALL']);
 
         // 1. Tables du schéma
         $tables = [];
@@ -214,7 +222,11 @@ class AccessProvisioningService
 
         foreach ($tables as $t) {
             $tbl = $t['TABLE_NAME'];
-            if ($canSelect && $canDml) {
+            if ($isAll) {
+                // Note Oracle : REFERENCES / INDEX ne peuvent être accordés à un rôle (ORA-01931) ;
+                // GRANT ALL ON obj TO user est appliqué directement au développeur lors de l'attribution du rôle APP_ALL.
+                $sql = "GRANT SELECT, INSERT, UPDATE, DELETE, ALTER ON \"{$schema}\".\"{$tbl}\" TO {$roleName}";
+            } elseif ($canSelect && $canDml) {
                 $sql = "GRANT SELECT, INSERT, UPDATE, DELETE ON \"{$schema}\".\"{$tbl}\" TO {$roleName}";
             } elseif ($canSelect) {
                 $sql = "GRANT SELECT ON \"{$schema}\".\"{$tbl}\" TO {$roleName}";
@@ -228,6 +240,13 @@ class AccessProvisioningService
                 $this->db->executeDdl($sql);
                 $granted[] = "TABLE {$tbl}";
             } catch (\Throwable $e) {
+                if ($isAll) {
+                    try {
+                        $this->db->executeDdl("GRANT SELECT, INSERT, UPDATE, DELETE ON \"{$schema}\".\"{$tbl}\" TO {$roleName}");
+                        $granted[] = "TABLE {$tbl}";
+                        continue;
+                    } catch (\Throwable $e2) {}
+                }
                 $errors[] = "TABLE {$tbl}: " . $e->getMessage();
             }
         }
@@ -244,7 +263,19 @@ class AccessProvisioningService
 
         foreach ($views as $v) {
             $vw = $v['VIEW_NAME'];
-            if ($canSelect) {
+            if ($isAll) {
+                try {
+                    $this->db->executeDdl("GRANT SELECT, INSERT, UPDATE, DELETE ON \"{$schema}\".\"{$vw}\" TO {$roleName}");
+                    $granted[] = "VIEW {$vw}";
+                } catch (\Throwable $e) {
+                    try {
+                        $this->db->executeDdl("GRANT SELECT ON \"{$schema}\".\"{$vw}\" TO {$roleName}");
+                        $granted[] = "VIEW {$vw}";
+                    } catch (\Throwable $e2) {
+                        $errors[] = "VIEW {$vw}: " . $e2->getMessage();
+                    }
+                }
+            } elseif ($canSelect) {
                 $sql = "GRANT SELECT ON \"{$schema}\".\"{$vw}\" TO {$roleName}";
                 try {
                     $this->db->executeDdl($sql);
@@ -267,7 +298,19 @@ class AccessProvisioningService
 
         foreach ($sequences as $sq) {
             $seq = $sq['SEQUENCE_NAME'];
-            if ($canSelect || $canDml) {
+            if ($isAll) {
+                try {
+                    $this->db->executeDdl("GRANT SELECT, ALTER ON \"{$schema}\".\"{$seq}\" TO {$roleName}");
+                    $granted[] = "SEQUENCE {$seq}";
+                } catch (\Throwable $e) {
+                    try {
+                        $this->db->executeDdl("GRANT SELECT ON \"{$schema}\".\"{$seq}\" TO {$roleName}");
+                        $granted[] = "SEQUENCE {$seq}";
+                    } catch (\Throwable $e2) {
+                        $errors[] = "SEQUENCE {$seq}: " . $e2->getMessage();
+                    }
+                }
+            } elseif ($canSelect || $canDml) {
                 $sql = "GRANT SELECT ON \"{$schema}\".\"{$seq}\" TO {$roleName}";
                 try {
                     $this->db->executeDdl($sql);
@@ -278,7 +321,147 @@ class AccessProvisioningService
             }
         }
 
+        // 4. Objets exécutables (PROCEDURE, FUNCTION, PACKAGE, TYPE)
+        if ($canExecute) {
+            $execObjs = [];
+            try {
+                $execObjs = $this->db->query(
+                    "SELECT OBJECT_NAME, OBJECT_TYPE FROM DBA_OBJECTS WHERE OWNER = :s AND OBJECT_TYPE IN ('PROCEDURE', 'FUNCTION', 'PACKAGE', 'TYPE') ORDER BY OBJECT_TYPE, OBJECT_NAME",
+                    ['s' => $schema]
+                );
+            } catch (\Throwable $e) {
+                try {
+                    $execObjs = $this->db->query(
+                        "SELECT OBJECT_NAME, OBJECT_TYPE FROM ALL_OBJECTS WHERE OWNER = :s AND OBJECT_TYPE IN ('PROCEDURE', 'FUNCTION', 'PACKAGE', 'TYPE') ORDER BY OBJECT_TYPE, OBJECT_NAME",
+                        ['s' => $schema]
+                    );
+                } catch (\Throwable $e2) {}
+            }
+
+            foreach ($execObjs as $eo) {
+                $oName = $eo['OBJECT_NAME'];
+                $oType = $eo['OBJECT_TYPE'];
+                try {
+                    $this->db->executeDdl("GRANT EXECUTE ON \"{$schema}\".\"{$oName}\" TO {$roleName}");
+                    $granted[] = "{$oType} {$oName}";
+                } catch (\Throwable $e) {
+                    $errors[] = "{$oType} {$oName}: " . $e->getMessage();
+                }
+            }
+        }
+
+        // 5. Vues Matérialisées (MATERIALIZED VIEW)
+        if ($canSelect || $isAll) {
+            $mviews = [];
+            try {
+                $mviews = $this->db->query("SELECT MVIEW_NAME FROM DBA_MVIEWS WHERE OWNER = :s ORDER BY MVIEW_NAME", ['s' => $schema]);
+            } catch (\Throwable $e) {
+                try {
+                    $mviews = $this->db->query("SELECT MVIEW_NAME FROM ALL_MVIEWS WHERE OWNER = :s ORDER BY MVIEW_NAME", ['s' => $schema]);
+                } catch (\Throwable $e2) {}
+            }
+
+            foreach ($mviews as $mv) {
+                $mvName = $mv['MVIEW_NAME'];
+                try {
+                    $this->db->executeDdl("GRANT SELECT ON \"{$schema}\".\"{$mvName}\" TO {$roleName}");
+                    $granted[] = "MATERIALIZED VIEW {$mvName}";
+                } catch (\Throwable $e) {
+                    $errors[] = "MATERIALIZED VIEW {$mvName}: " . $e->getMessage();
+                }
+            }
+        }
+
         return ['granted' => $granted, 'errors' => $errors];
+    }
+
+    /**
+     * Liste les objets d'un schéma couverts par le profil APP_ALL :
+     * TABLE, VIEW, SEQUENCE, PROCEDURE, FUNCTION, PACKAGE, TYPE, MATERIALIZED VIEW
+     *
+     * @return array<int, array{OBJECT_NAME: string, OBJECT_TYPE: string}>
+     */
+    private function getSchemaObjectsForAllProfile(string $schema): array
+    {
+        $schema = strtoupper(trim($schema));
+        $sqlDba = "SELECT OBJECT_NAME, OBJECT_TYPE
+                   FROM DBA_OBJECTS
+                   WHERE OWNER = :s
+                     AND OBJECT_TYPE IN (
+                         'TABLE', 'VIEW', 'SEQUENCE', 'PROCEDURE',
+                         'FUNCTION', 'PACKAGE', 'TYPE', 'MATERIALIZED VIEW'
+                     )
+                     AND OBJECT_NAME NOT LIKE 'BIN\$%'
+                   ORDER BY OBJECT_TYPE, OBJECT_NAME";
+        $sqlAll = str_replace('DBA_OBJECTS', 'ALL_OBJECTS', $sqlDba);
+
+        $rows = [];
+        try {
+            $rows = $this->db->query($sqlDba, ['s' => $schema]);
+        } catch (\Throwable $e) {
+            try {
+                $rows = $this->db->query($sqlAll, ['s' => $schema]);
+            } catch (\Throwable $e2) {}
+        }
+
+        // Déduplication par nom d'objet (ex: une MATERIALIZED VIEW et sa table conteneur partagent le même nom)
+        $unique = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            $name = strtoupper(trim((string)($row['OBJECT_NAME'] ?? '')));
+            $type = strtoupper(trim((string)($row['OBJECT_TYPE'] ?? '')));
+            if ($name === '' || isset($seen[$name])) {
+                continue;
+            }
+            $seen[$name] = true;
+            $unique[] = ['OBJECT_NAME' => $name, 'OBJECT_TYPE' => $type];
+        }
+
+        return $unique;
+    }
+
+    /**
+     * Accorde directement GRANT ALL ON "SCHEMA"."OBJ" TO USER
+     * pour tous les objets du schéma (TABLE, VIEW, SEQUENCE, PROCEDURE, FUNCTION, PACKAGE, TYPE, MATERIALIZED VIEW).
+     * Utilisé lorsque un rôle de profil APP_ALL est attribué à un développeur.
+     */
+    public function grantAllSchemaObjectsToUser(string $schema, string $oracleUser): array
+    {
+        $schema = strtoupper(trim($schema));
+        $oracleUser = strtoupper(trim($oracleUser));
+        $granted = [];
+        $errors = [];
+
+        $objects = $this->getSchemaObjectsForAllProfile($schema);
+        foreach ($objects as $obj) {
+            $objName = $obj['OBJECT_NAME'];
+            $objType = $obj['OBJECT_TYPE'];
+            try {
+                $this->db->executeDdl("GRANT ALL ON \"{$schema}\".\"{$objName}\" TO {$oracleUser}");
+                $granted[] = "{$objType} {$objName}";
+            } catch (\Throwable $e) {
+                $errors[] = "{$objType} {$objName}: " . $e->getMessage();
+            }
+        }
+
+        return ['granted' => $granted, 'errors' => $errors];
+    }
+
+    /**
+     * Révoque les privilèges GRANT ALL accordés directement à un utilisateur lors de la révocation d'un rôle APP_ALL
+     */
+    public function revokeAllSchemaObjectsFromUser(string $schema, string $oracleUser): void
+    {
+        $schema = strtoupper(trim($schema));
+        $oracleUser = strtoupper(trim($oracleUser));
+
+        $objects = $this->getSchemaObjectsForAllProfile($schema);
+        foreach ($objects as $obj) {
+            $objName = $obj['OBJECT_NAME'];
+            try {
+                $this->db->executeDdl("REVOKE ALL ON \"{$schema}\".\"{$objName}\" FROM {$oracleUser}");
+            } catch (\Throwable $e) {}
+        }
     }
 
     /**
@@ -453,6 +636,21 @@ class AccessProvisioningService
             $this->syncSchemaPrivilegesToRole($r['TARGET_SCHEMA'], $r['ROLE_NAME'], $r['PROFILE_TYPE'] ?? 'APP_READ_WRITE');
             $syncedRoles++;
         }
+
+        // 1b. Pour les rôles APP_ALL attribués, synchroniser également GRANT ALL ON obj TO user
+        try {
+            $allAssignments = $this->db->query(
+                "SELECT da.USERNAME, da.TARGET_SCHEMA
+                 FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS da
+                 INNER JOIN ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES ar ON da.ROLE_ID = ar.ROLE_ID
+                 WHERE da.STATUS = 'ACTIVE' AND UPPER(TRIM(ar.PROFILE_TYPE)) IN ('APP_ALL', 'ALL')"
+            );
+            foreach ($allAssignments as $aa) {
+                if (!empty($aa['USERNAME']) && !empty($aa['TARGET_SCHEMA'])) {
+                    $this->grantAllSchemaObjectsToUser($aa['TARGET_SCHEMA'], $aa['USERNAME']);
+                }
+            }
+        } catch (\Throwable $e) {}
 
         // 2. Détecter tous les développeurs (depuis ZIRIOAM_DEVELOPER_ACCESS et ZIRIOAM_DEVELOPERS)
         $devUsernames = [];
@@ -630,12 +828,18 @@ class AccessProvisioningService
             $roleRow = $this->db->queryOne("SELECT ROLE_NAME, TARGET_SCHEMA, PROFILE_TYPE FROM ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES WHERE ROLE_ID = :rid", ['rid' => $roleId]);
             if ($roleRow && !empty($roleRow['ROLE_NAME'])) {
                 $roleName = $roleRow['ROLE_NAME'];
+                $profileType = strtoupper(trim((string)($roleRow['PROFILE_TYPE'] ?? 'APP_READ_WRITE')));
                 try {
                     $this->db->executeDdl("GRANT {$roleName} TO {$localRole}");
                 } catch (\Throwable $e) {}
 
-                // Synchroniser automatiquement les tables et vues du schéma vers ce rôle
-                $this->syncSchemaPrivilegesToRole($schema, $roleName, $roleRow['PROFILE_TYPE'] ?? 'APP_READ_WRITE');
+                // Synchroniser automatiquement les objets du schéma vers ce rôle
+                $this->syncSchemaPrivilegesToRole($schema, $roleName, $profileType);
+
+                // Règle spécifique APP_ALL : accorder GRANT ALL ON obj TO user sur tous les objets du schéma
+                if (in_array($profileType, ['APP_ALL', 'ALL'], true)) {
+                    $this->grantAllSchemaObjectsToUser($schema, $oracleUser);
+                }
             }
         }
 
@@ -729,7 +933,7 @@ class AccessProvisioningService
     {
         $this->db->switchContainer($pdbName);
 
-        $row = $this->db->queryOne("SELECT da.USERNAME, da.TARGET_SCHEMA, ar.ROLE_NAME 
+        $row = $this->db->queryOne("SELECT da.USERNAME, da.TARGET_SCHEMA, ar.ROLE_NAME, ar.PROFILE_TYPE 
                                      FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS da
                                      LEFT JOIN ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES ar ON da.ROLE_ID = ar.ROLE_ID
                                      WHERE da.ACCESS_ID = :id", ['id' => $accessId]);
@@ -750,6 +954,10 @@ class AccessProvisioningService
             try {
                 $this->db->executeDdl("REVOKE {$row['ROLE_NAME']} FROM {$user}");
             } catch (\Throwable $e) {}
+
+            if (in_array(strtoupper(trim((string)($row['PROFILE_TYPE'] ?? ''))), ['APP_ALL', 'ALL'], true)) {
+                $this->revokeAllSchemaObjectsFromUser($schema, $normUser);
+            }
         }
 
         // Mettre à jour ou supprimer de la matrice

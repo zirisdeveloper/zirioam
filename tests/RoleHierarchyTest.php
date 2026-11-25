@@ -94,6 +94,44 @@ class RoleHierarchyTest
         // Le privilège système UNLIMITED TABLESPACE ne peut pas être accordé à un rôle,
         // les quotas tablespaces doivent obligatoirement être portés par l'utilisateur.
         echo "  [PASS] Génération et syntaxe des ordres de quota tablespace validées (Résolution ORA-01950).\n";
+
+        // 6. Test Profil APP_ALL : GRANT ALL ON obj TO user sur les 8 types d'objets
+        $mockConn = new class extends \App\Database\OracleConnection {
+            public array $executedDdls = [];
+            public function __construct() {}
+            public function switchContainer(string $containerName): bool { return true; }
+            public function query(string $sql, array $binds = []): array
+            {
+                return [
+                    ['OBJECT_NAME' => 'EMP', 'OBJECT_TYPE' => 'TABLE'],
+                    ['OBJECT_NAME' => 'V_EMP', 'OBJECT_TYPE' => 'VIEW'],
+                    ['OBJECT_NAME' => 'SEQ_EMP', 'OBJECT_TYPE' => 'SEQUENCE'],
+                    ['OBJECT_NAME' => 'PRC_CALC', 'OBJECT_TYPE' => 'PROCEDURE'],
+                    ['OBJECT_NAME' => 'FNC_TAX', 'OBJECT_TYPE' => 'FUNCTION'],
+                    ['OBJECT_NAME' => 'PKG_PAIE', 'OBJECT_TYPE' => 'PACKAGE'],
+                    ['OBJECT_NAME' => 'TYP_ADDR', 'OBJECT_TYPE' => 'TYPE'],
+                    ['OBJECT_NAME' => 'MV_STATS', 'OBJECT_TYPE' => 'MATERIALIZED VIEW'],
+                ];
+            }
+            public function executeDdl(string $sql): bool
+            {
+                $this->executedDdls[] = $sql;
+                return true;
+            }
+        };
+
+        $accessSvc = new \App\Services\AccessProvisioningService($mockConn);
+        $allRes = $accessSvc->grantAllSchemaObjectsToUser('PAIE', 'C##USER1');
+        assert(count($allRes['granted']) === 8, "Les 8 types d'objets APP_ALL doivent recevoir GRANT ALL");
+        assert(in_array('GRANT ALL ON "PAIE"."EMP" TO C##USER1', $mockConn->executedDdls, true));
+        assert(in_array('GRANT ALL ON "PAIE"."V_EMP" TO C##USER1', $mockConn->executedDdls, true));
+        assert(in_array('GRANT ALL ON "PAIE"."SEQ_EMP" TO C##USER1', $mockConn->executedDdls, true));
+        assert(in_array('GRANT ALL ON "PAIE"."PRC_CALC" TO C##USER1', $mockConn->executedDdls, true));
+        assert(in_array('GRANT ALL ON "PAIE"."FNC_TAX" TO C##USER1', $mockConn->executedDdls, true));
+        assert(in_array('GRANT ALL ON "PAIE"."PKG_PAIE" TO C##USER1', $mockConn->executedDdls, true));
+        assert(in_array('GRANT ALL ON "PAIE"."TYP_ADDR" TO C##USER1', $mockConn->executedDdls, true));
+        assert(in_array('GRANT ALL ON "PAIE"."MV_STATS" TO C##USER1', $mockConn->executedDdls, true));
+        echo "  [PASS] Profil APP_ALL (GRANT ALL ON obj TO user sur TABLE/VIEW/SEQUENCE/PROC/FUNC/PKG/TYPE/MVIEW) validé.\n";
     }
 }
 

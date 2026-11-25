@@ -13,7 +13,7 @@ CREATE OR REPLACE PACKAGE ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AUTHID DEFINER AS
     -- Création d'un rôle fonctionnel Oracle pour un schéma cible
     FUNCTION create_schema_role (
         p_target_schema IN VARCHAR2,
-        p_profile_type  IN VARCHAR2, -- APP_READ, APP_WRITE, APP_READ_WRITE, APP_EXECUTE
+        p_profile_type  IN VARCHAR2, -- APP_READ, APP_WRITE, APP_READ_WRITE, APP_EXECUTE, APP_ALL
         p_description   IN VARCHAR2 DEFAULT NULL,
         p_created_by    IN VARCHAR2 DEFAULT USER
     ) RETURN NUMBER;
@@ -89,6 +89,7 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
                            WHEN 'APP_WRITE' THEN 'WRITE'
                            WHEN 'APP_READ_WRITE' THEN 'RW'
                            WHEN 'APP_EXECUTE' THEN 'EXEC'
+                           WHEN 'APP_ALL' THEN 'ALL'
                            ELSE SUBSTR(UPPER(TRIM(p_profile_type)), 1, 10)
                        END;
 
