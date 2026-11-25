@@ -55,6 +55,8 @@ try {
     echo "\n";
     \Tests\SelfServicePasswordTest::run();
     echo "\n";
+    \Tests\AdminAuthTest::run();
+    echo "\n";
     echo "======================================================\n";
     echo "   TOUS LES TESTS ONT ÉTÉ EXÉCUTÉS AVEC SUCCÈS (100%)\n";
     echo "======================================================\n\n";

@@ -15,6 +15,12 @@ class AuthMiddleware
     {
         $session = App::getInstance()->getSession();
 
+        if (!$session->has('admin_user') || empty($session->get('admin_user'))) {
+            $session->setFlash('warning', "Accès réservé aux administrateurs. Veuillez vous connecter.");
+            $response = new Response();
+            return $response->redirect(zirioam_url('/login'));
+        }
+
         if (!$session->has('oracle_session') || !$session->has('current_server')) {
             $session->setFlash('warning', "Veuillez vous connecter à un serveur Oracle pour accéder à cette interface.");
             $response = new Response();

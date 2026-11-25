@@ -75,9 +75,11 @@
                     <form action="<?= zirioam_url('/disconnect') ?>" method="POST" class="d-inline">
                         <?= zirioam_csrf_field() ?>
                         <button type="submit" class="btn btn-outline-danger btn-sm" title="Fermer la session Oracle">
-                            Déconnexion
+                            Déconnexion Oracle
                         </button>
                     </form>
+
+                    <?php include ZIRIOAM_ROOT_PATH . '/views/partials/admin_profile_menu.php'; ?>
                 </div>
             </div>
         </div>
@@ -137,6 +139,8 @@
             </div>
         </div>
     </footer>
+
+    <?php include ZIRIOAM_ROOT_PATH . '/views/partials/admin_profile_modals.php'; ?>
 
     <script src="<?= zirioam_asset('js/bootstrap.bundle.min.js') ?>"></script>
     <script src="<?= zirioam_asset('js/zirioam.js') ?>"></script>

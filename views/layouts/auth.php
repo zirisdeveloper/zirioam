@@ -15,9 +15,12 @@
                 <span>ZIRI OAM</span>
                 <span class="badge-tag">Oracle 19c</span>
             </a>
-            <span class="text-light small opacity-75">
-                Oracle Developer Access Manager
-            </span>
+            <div class="d-flex align-items-center gap-3">
+                <span class="text-light small opacity-75 d-none d-sm-inline">
+                    Oracle Developer Access Manager
+                </span>
+                <?php include ZIRIOAM_ROOT_PATH . '/views/partials/admin_profile_menu.php'; ?>
+            </div>
         </div>
     </nav>
 
@@ -45,6 +48,8 @@
             <div class="mt-1">Sécurité stricte &bull; Isolation CDB/PDB &bull; Non-persistance des secrets</div>
         </div>
     </footer>
+
+    <?php include ZIRIOAM_ROOT_PATH . '/views/partials/admin_profile_modals.php'; ?>
 
     <script src="<?= zirioam_asset('js/bootstrap.bundle.min.js') ?>"></script>
     <script src="<?= zirioam_asset('js/zirioam.js') ?>"></script>

@@ -12,6 +12,10 @@ class HomeController extends Controller
 {
     public function index(Request $request): Response
     {
+        if (!$this->session->has('admin_user')) {
+            return $this->redirect('/login');
+        }
+
         if ($this->session->has('oracle_session')) {
             return $this->redirect('/databases');
         }

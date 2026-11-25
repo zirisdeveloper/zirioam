@@ -25,6 +25,10 @@ abstract class Controller
         $data['currentServer'] = $this->session->get('current_server');
         $data['currentCdb'] = $this->session->get('current_cdb');
         $data['currentPdb'] = $this->session->get('current_pdb');
+        $data['currentAdminUser'] = $this->session->get('admin_user');
+        $data['adminUsernames'] = $data['currentAdminUser']
+            ? (new \App\Services\AdminAuthService())->listAdminUsernames()
+            : [];
 
         $html = $this->view->render($view, $data, $layout);
 

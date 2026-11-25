@@ -30,6 +30,15 @@ return [
             : dirname(__DIR__) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'servers.json'
     ),
 
+    // Chemin absolu vers le fichier d'authentification des administrateurs ZIRIOAM
+    // En production Linux : /etc/zirioam/auth.env
+    // En environnement local / test : config/auth.env
+    'auth_env_path' => getenv('ZIRIOAM_AUTH_ENV') ?: (
+        DIRECTORY_SEPARATOR === '/'
+            ? '/etc/zirioam/auth.env'
+            : dirname(__DIR__) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'auth.env'
+    ),
+
     // Sécurité et sessions
     'session' => [
         'name' => 'ZIRIOAM_SESSID',

@@ -47,15 +47,26 @@ $router = $app->getRouter();
 
 // Middlewares
 $csrf = \App\Middleware\CsrfMiddleware::class;
+$adminAuth = \App\Middleware\AdminAuthMiddleware::class;
 $auth = \App\Middleware\AuthMiddleware::class;
 
 // Définition des Routes HTTP
 // -------------------------------------------------------------
-// Accueil & Sélection Serveur
-$router->get('/', [\App\Controllers\HomeController::class, 'index']);
-$router->get('/servers', [\App\Controllers\ServerController::class, 'index']);
+// Authentification Plateforme Administrateur
+$router->get('/login', [\App\Controllers\AdminAuthController::class, 'showLogin']);
+$router->post('/login', [\App\Controllers\AdminAuthController::class, 'login'], [$csrf]);
+$router->post('/logout', [\App\Controllers\AdminAuthController::class, 'logout'], [$adminAuth, $csrf]);
 
-// Espace Développeur Autonome : Changement de Mot de Passe (Sans menu DBA)
+// Gestion du Profil & des Administrateurs (Menu Profil)
+$router->post('/admin/password', [\App\Controllers\AdminAuthController::class, 'changeOwnPassword'], [$adminAuth, $csrf]);
+$router->post('/admin/users/create', [\App\Controllers\AdminAuthController::class, 'createAdmin'], [$adminAuth, $csrf]);
+$router->post('/admin/users/reset-password', [\App\Controllers\AdminAuthController::class, 'resetAdminPassword'], [$adminAuth, $csrf]);
+
+// Accueil & Sélection Serveur (Réservé aux administrateurs connectés)
+$router->get('/', [\App\Controllers\HomeController::class, 'index']);
+$router->get('/servers', [\App\Controllers\ServerController::class, 'index'], [$adminAuth]);
+
+// Espace Développeur Autonome : Changement de Mot de Passe (Sans authentification admin ni menu DBA)
 $router->get('/UpdPwd', [\App\Controllers\DeveloperSelfServiceController::class, 'index']);
 $router->post('/UpdPwd', [\App\Controllers\DeveloperSelfServiceController::class, 'update'], [$csrf]);
 $router->post('/UpdPwd/verify', [\App\Controllers\DeveloperSelfServiceController::class, 'verify'], [$csrf]);
@@ -63,10 +74,10 @@ $router->get('/updpwd', [\App\Controllers\DeveloperSelfServiceController::class,
 $router->post('/updpwd', [\App\Controllers\DeveloperSelfServiceController::class, 'update'], [$csrf]);
 $router->post('/updpwd/verify', [\App\Controllers\DeveloperSelfServiceController::class, 'verify'], [$csrf]);
 
-// Authentification Oracle DBA
-$router->get('/servers/{server_id}/connect', [\App\Controllers\ConnectionController::class, 'show']);
-$router->post('/servers/{server_id}/connect', [\App\Controllers\ConnectionController::class, 'connect'], [$csrf]);
-$router->post('/disconnect', [\App\Controllers\ConnectionController::class, 'disconnect'], [$csrf]);
+// Authentification Oracle DBA (Réservé aux administrateurs connectés)
+$router->get('/servers/{server_id}/connect', [\App\Controllers\ConnectionController::class, 'show'], [$adminAuth]);
+$router->post('/servers/{server_id}/connect', [\App\Controllers\ConnectionController::class, 'connect'], [$adminAuth, $csrf]);
+$router->post('/disconnect', [\App\Controllers\ConnectionController::class, 'disconnect'], [$adminAuth, $csrf]);
 
 // Tableau de Bord Principal (Section 17)
 $router->get('/dashboard', [\App\Controllers\DashboardController::class, 'index'], [$auth]);
