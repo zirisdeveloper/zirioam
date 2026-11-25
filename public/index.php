@@ -49,6 +49,7 @@ $router = $app->getRouter();
 $csrf = \App\Middleware\CsrfMiddleware::class;
 $adminAuth = \App\Middleware\AdminAuthMiddleware::class;
 $auth = \App\Middleware\AuthMiddleware::class;
+$ssAuth = \App\Middleware\SelfServiceAuthMiddleware::class;
 
 // Définition des Routes HTTP
 // -------------------------------------------------------------
@@ -73,6 +74,16 @@ $router->post('/UpdPwd/verify', [\App\Controllers\DeveloperSelfServiceController
 $router->get('/updpwd', [\App\Controllers\DeveloperSelfServiceController::class, 'index']);
 $router->post('/updpwd', [\App\Controllers\DeveloperSelfServiceController::class, 'update'], [$csrf]);
 $router->post('/updpwd/verify', [\App\Controllers\DeveloperSelfServiceController::class, 'verify'], [$csrf]);
+
+// Portail Self-Service Développeur (/selfservice — Sans authentification admin)
+$router->get('/selfservice', [\App\Controllers\SelfServicePortalController::class, 'index']);
+$router->post('/selfservice/connect', [\App\Controllers\SelfServicePortalController::class, 'connect'], [$csrf]);
+$router->post('/selfservice/disconnect', [\App\Controllers\SelfServicePortalController::class, 'disconnect'], [$ssAuth, $csrf]);
+$router->get('/selfservice/pdbs', [\App\Controllers\SelfServicePortalController::class, 'pdbs'], [$ssAuth]);
+$router->post('/selfservice/pdbs/{pdb_name}/select', [\App\Controllers\SelfServicePortalController::class, 'selectPdb'], [$ssAuth, $csrf]);
+$router->get('/selfservice/privs', [\App\Controllers\SelfServicePortalController::class, 'privs'], [$ssAuth]);
+$router->post('/selfservice/privs/sync-pdb', [\App\Controllers\SelfServicePortalController::class, 'syncPdb'], [$ssAuth, $csrf]);
+$router->post('/selfservice/privs/sync-all', [\App\Controllers\SelfServicePortalController::class, 'syncAll'], [$ssAuth, $csrf]);
 
 // Authentification Oracle DBA (Réservé aux administrateurs connectés)
 $router->get('/servers/{server_id}/connect', [\App\Controllers\ConnectionController::class, 'show'], [$adminAuth]);

@@ -512,3 +512,229 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AS
 END PKG_ZIRIOAM_DDL_ENGINE;
 /
 
+-- ---------------------------------------------------------------------
+-- 3. PACKAGE : PKG_ZIRIOAM_DEV_SELFSERVICE (Espace Self-Service Développeur)
+-- Permet au développeur authentifié sur sa session Oracle de consulter
+-- uniquement ses propres droits et de synchroniser les privilèges sur
+-- les nouveaux objets des schémas qui lui sont autorisés dans la PDB.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE PACKAGE ZIRIOAM_OWNER.PKG_ZIRIOAM_DEV_SELFSERVICE AUTHID DEFINER AS
+
+    -- Retourne uniquement les accès actifs du développeur appelant (SESSION_USER)
+    PROCEDURE get_my_access (
+        p_cursor OUT SYS_REFCURSOR
+    );
+
+    -- Synchronise les privilèges d'objets des schémas autorisés pour le développeur appelant
+    PROCEDURE sync_my_privileges (
+        p_out_synced_count OUT NUMBER,
+        p_out_details      OUT VARCHAR2
+    );
+
+END PKG_ZIRIOAM_DEV_SELFSERVICE;
+/
+
+CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_DEV_SELFSERVICE AS
+
+    PROCEDURE get_my_access (
+        p_cursor OUT SYS_REFCURSOR
+    ) IS
+        v_caller VARCHAR2(128);
+    BEGIN
+        v_caller := UPPER(SYS_CONTEXT('USERENV', 'SESSION_USER'));
+        OPEN p_cursor FOR
+            SELECT da.TARGET_SCHEMA,
+                   ar.ROLE_NAME,
+                   ar.PROFILE_TYPE,
+                   da.CAN_DDL_CREATE,
+                   da.CAN_DDL_ALTER,
+                   da.CAN_DDL_DROP,
+                   da.STATUS
+            FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS da
+            LEFT JOIN ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES ar ON da.ROLE_ID = ar.ROLE_ID
+            WHERE (da.USERNAME = v_caller OR ('C##' || da.USERNAME) = v_caller)
+              AND da.STATUS = 'ACTIVE'
+            ORDER BY da.TARGET_SCHEMA;
+    END get_my_access;
+
+    PROCEDURE sync_my_privileges (
+        p_out_synced_count OUT NUMBER,
+        p_out_details      OUT VARCHAR2
+    ) IS
+        v_caller     VARCHAR2(128);
+        v_schema     VARCHAR2(128);
+        v_role       VARCHAR2(128);
+        v_ptype      VARCHAR2(30);
+        v_is_all     BOOLEAN;
+        v_can_select BOOLEAN;
+        v_can_dml    BOOLEAN;
+        v_can_exec   BOOLEAN;
+        v_count      NUMBER := 0;
+        v_schemas    VARCHAR2(2000) := '';
+    BEGIN
+        v_caller := UPPER(SYS_CONTEXT('USERENV', 'SESSION_USER'));
+
+        FOR rec IN (
+            SELECT da.TARGET_SCHEMA,
+                   ar.ROLE_NAME,
+                   ar.PROFILE_TYPE
+            FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS da
+            LEFT JOIN ZIRIOAM_OWNER.ZIRIOAM_ACCESS_ROLES ar ON da.ROLE_ID = ar.ROLE_ID
+            WHERE (da.USERNAME = v_caller OR ('C##' || da.USERNAME) = v_caller)
+              AND da.STATUS = 'ACTIVE'
+              AND da.ROLE_ID IS NOT NULL
+        ) LOOP
+            v_schema := UPPER(TRIM(rec.TARGET_SCHEMA));
+            v_role   := UPPER(TRIM(rec.ROLE_NAME));
+            v_ptype  := UPPER(TRIM(NVL(rec.PROFILE_TYPE, 'APP_READ_WRITE')));
+
+            IF v_schemas IS NULL OR LENGTH(v_schemas) < 1800 THEN
+                v_schemas := CASE WHEN v_schemas IS NULL THEN v_schema ELSE v_schemas || ', ' || v_schema END;
+            END IF;
+
+            v_is_all     := (v_ptype IN ('APP_ALL', 'ALL'));
+            v_can_select := (v_ptype IN ('APP_READ', 'READ', 'APP_READ_WRITE', 'RW', 'APP_ALL', 'ALL'));
+            v_can_dml    := (v_ptype IN ('APP_WRITE', 'WRITE', 'APP_READ_WRITE', 'RW', 'APP_ALL', 'ALL'));
+            v_can_exec   := (v_ptype IN ('APP_EXECUTE', 'EXEC', 'APP_ALL', 'ALL'));
+
+            -- 1. Tables
+            FOR t IN (
+                SELECT TABLE_NAME FROM DBA_TABLES
+                WHERE OWNER = v_schema AND TABLE_NAME NOT LIKE 'BIN$%'
+            ) LOOP
+                BEGIN
+                    IF v_is_all THEN
+                        BEGIN
+                            EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE, DELETE, ALTER ON "' || v_schema || '"."' || t.TABLE_NAME || '" TO ' || v_role;
+                        EXCEPTION WHEN OTHERS THEN
+                            EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE, DELETE ON "' || v_schema || '"."' || t.TABLE_NAME || '" TO ' || v_role;
+                        END;
+                        v_count := v_count + 1;
+                    ELSIF v_can_select AND v_can_dml THEN
+                        EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE, DELETE ON "' || v_schema || '"."' || t.TABLE_NAME || '" TO ' || v_role;
+                        v_count := v_count + 1;
+                    ELSIF v_can_select THEN
+                        EXECUTE IMMEDIATE 'GRANT SELECT ON "' || v_schema || '"."' || t.TABLE_NAME || '" TO ' || v_role;
+                        v_count := v_count + 1;
+                    ELSIF v_can_dml THEN
+                        EXECUTE IMMEDIATE 'GRANT INSERT, UPDATE, DELETE ON "' || v_schema || '"."' || t.TABLE_NAME || '" TO ' || v_role;
+                        v_count := v_count + 1;
+                    END IF;
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+            END LOOP;
+
+            -- 2. Vues
+            FOR v IN (
+                SELECT VIEW_NAME FROM DBA_VIEWS WHERE OWNER = v_schema
+            ) LOOP
+                BEGIN
+                    IF v_is_all THEN
+                        BEGIN
+                            EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE, DELETE ON "' || v_schema || '"."' || v.VIEW_NAME || '" TO ' || v_role;
+                        EXCEPTION WHEN OTHERS THEN
+                            EXECUTE IMMEDIATE 'GRANT SELECT ON "' || v_schema || '"."' || v.VIEW_NAME || '" TO ' || v_role;
+                        END;
+                        v_count := v_count + 1;
+                    ELSIF v_can_select THEN
+                        EXECUTE IMMEDIATE 'GRANT SELECT ON "' || v_schema || '"."' || v.VIEW_NAME || '" TO ' || v_role;
+                        v_count := v_count + 1;
+                    END IF;
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+            END LOOP;
+
+            -- 3. Séquences
+            FOR s IN (
+                SELECT SEQUENCE_NAME FROM DBA_SEQUENCES WHERE SEQUENCE_OWNER = v_schema
+            ) LOOP
+                BEGIN
+                    IF v_is_all THEN
+                        BEGIN
+                            EXECUTE IMMEDIATE 'GRANT SELECT, ALTER ON "' || v_schema || '"."' || s.SEQUENCE_NAME || '" TO ' || v_role;
+                        EXCEPTION WHEN OTHERS THEN
+                            EXECUTE IMMEDIATE 'GRANT SELECT ON "' || v_schema || '"."' || s.SEQUENCE_NAME || '" TO ' || v_role;
+                        END;
+                        v_count := v_count + 1;
+                    ELSIF v_can_select OR v_can_dml THEN
+                        EXECUTE IMMEDIATE 'GRANT SELECT ON "' || v_schema || '"."' || s.SEQUENCE_NAME || '" TO ' || v_role;
+                        v_count := v_count + 1;
+                    END IF;
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+            END LOOP;
+
+            -- 4. Objets exécutables (PROCEDURE, FUNCTION, PACKAGE, TYPE)
+            IF v_can_exec THEN
+                FOR p IN (
+                    SELECT OBJECT_NAME FROM DBA_OBJECTS
+                    WHERE OWNER = v_schema AND OBJECT_TYPE IN ('PROCEDURE', 'FUNCTION', 'PACKAGE', 'TYPE')
+                ) LOOP
+                    BEGIN
+                        EXECUTE IMMEDIATE 'GRANT EXECUTE ON "' || v_schema || '"."' || p.OBJECT_NAME || '" TO ' || v_role;
+                        v_count := v_count + 1;
+                    EXCEPTION WHEN OTHERS THEN NULL;
+                    END;
+                END LOOP;
+            END IF;
+
+            -- 5. Vues matérialisées (MATERIALIZED VIEW)
+            IF v_can_select OR v_is_all THEN
+                FOR mv IN (
+                    SELECT MVIEW_NAME FROM DBA_MVIEWS WHERE OWNER = v_schema
+                ) LOOP
+                    BEGIN
+                        EXECUTE IMMEDIATE 'GRANT SELECT ON "' || v_schema || '"."' || mv.MVIEW_NAME || '" TO ' || v_role;
+                        v_count := v_count + 1;
+                    EXCEPTION WHEN OTHERS THEN NULL;
+                    END;
+                END LOOP;
+            END IF;
+
+            -- 6. Si profil APP_ALL : GRANT ALL ON obj TO user sur tous les objets du schéma
+            IF v_is_all THEN
+                FOR obj IN (
+                    SELECT DISTINCT OBJECT_NAME
+                    FROM DBA_OBJECTS
+                    WHERE OWNER = v_schema
+                      AND OBJECT_TYPE IN ('TABLE', 'VIEW', 'SEQUENCE', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TYPE', 'MATERIALIZED VIEW')
+                      AND OBJECT_NAME NOT LIKE 'BIN$%'
+                ) LOOP
+                    BEGIN
+                        EXECUTE IMMEDIATE 'GRANT ALL ON "' || v_schema || '"."' || obj.OBJECT_NAME || '" TO ' || v_caller;
+                        v_count := v_count + 1;
+                    EXCEPTION WHEN OTHERS THEN NULL;
+                    END;
+                END LOOP;
+            END IF;
+        END LOOP;
+
+        p_out_synced_count := v_count;
+        p_out_details := 'Schéma(s) synchronisé(s) : ' || NVL(v_schemas, 'Aucun rôle assigné');
+
+        ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS.log_audit(
+            'DEV_SELF_SYNC_PRIVS',
+            v_caller,
+            NULL,
+            NULL,
+            'SUCCESS',
+            'Synchronisation self-service (' || v_count || ' octrois) - ' || p_out_details,
+            v_caller
+        );
+    END sync_my_privileges;
+
+END PKG_ZIRIOAM_DEV_SELFSERVICE;
+/
+
+BEGIN
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT EXECUTE ON ZIRIOAM_OWNER.PKG_ZIRIOAM_DEV_SELFSERVICE TO ZIRIOAM_DEV_BASE_ROLE';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT EXECUTE ON ZIRIOAM_OWNER.PKG_ZIRIOAM_DEV_SELFSERVICE TO PUBLIC';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+END;
+/
+

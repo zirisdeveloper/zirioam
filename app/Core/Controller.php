@@ -29,6 +29,9 @@ abstract class Controller
         $data['adminUsernames'] = $data['currentAdminUser']
             ? (new \App\Services\AdminAuthService())->listAdminUsernames()
             : [];
+        $data['selfServiceSession'] = $this->session->get('selfservice_session');
+        $data['selfServiceCdb'] = $this->session->get('selfservice_cdb');
+        $data['selfServicePdb'] = $this->session->get('selfservice_pdb');
 
         $html = $this->view->render($view, $data, $layout);
 

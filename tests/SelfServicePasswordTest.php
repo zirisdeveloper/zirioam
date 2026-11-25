@@ -105,5 +105,40 @@ class SelfServicePasswordTest
         $router->dispatch($req3);
         assert($verifyMatched === true, "La route /updpwd/verify doit matcher /UpdPwd/verify");
         echo "  [PASS] Routage case-insensitive validé (/UpdPwd, /updpwd et endpoints AJAX /verify).\n";
+
+        // 8. Test Portail Self-Service (/selfservice) & isolation développeur/admin
+        $session = \App\Core\App::getInstance()->getSession();
+        $session->clear();
+
+        $_SERVER['REQUEST_METHOD'] = 'GET';
+        $_SERVER['REQUEST_URI'] = '/selfservice/privs';
+        $ssReq = new Request();
+
+        $ssMiddleware = new \App\Middleware\SelfServiceAuthMiddleware();
+        $blockedRes = $ssMiddleware->handle($ssReq);
+        assert($blockedRes !== null && $blockedRes->getStatusCode() === 302, "Accès à /selfservice/privs sans session développeur doit rediriger");
+
+        // Simuler session développeur active
+        $session->set('selfservice_session', [
+            'username' => 'C##SON0196',
+            'server' => ['server_id' => 'ALGORA18', 'server_name' => 'ALGORA18', 'ip_address' => '10.118.3.18', 'port' => 1521],
+            'cdb' => 'DEV16',
+        ]);
+        assert($ssMiddleware->handle($ssReq) === null, "Session selfservice valide doit accéder à /selfservice/privs");
+
+        // Vérifier qu'un développeur connecté sur /selfservice reste strictement bloqué sur les routes admin
+        $adminMw = new \App\Middleware\AdminAuthMiddleware();
+        $_SERVER['REQUEST_URI'] = '/servers';
+        $adminBlocked = $adminMw->handle(new Request());
+        assert($adminBlocked !== null && $adminBlocked->getStatusCode() === 302, "Un développeur selfservice ne doit jamais accéder aux routes admin");
+
+        // Vérifier sélection PDB & déconnexion
+        $portalSvc = new \App\Services\DeveloperPortalService($session);
+        $portalSvc->selectPdb('PDBTEST', 'pdbtest');
+        assert($session->get('selfservice_pdb') === 'PDBTEST');
+        $portalSvc->disconnect();
+        assert($portalSvc->getSessionData() === null);
+        $session->clear();
+        echo "  [PASS] Portail /selfservice, sélection PDB, déconnexion et isolation stricte validés.\n";
     }
 }

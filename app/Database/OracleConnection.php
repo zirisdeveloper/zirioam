@@ -218,6 +218,85 @@ class OracleConnection
         return $stmt;
     }
 
+    /**
+     * Exécute un bloc PL/SQL retournant un SYS_REFCURSOR (:cursor)
+     */
+    public function queryRefCursor(string $plsql, array $inBinds = []): array
+    {
+        $stmt = @oci_parse($this->connection, $plsql);
+        if (!$stmt) {
+            $err = oci_error($this->connection);
+            throw new OracleQueryException($err['message'] ?? 'Erreur parse curseur PL/SQL', $err['code'] ?? 0, $err['offset'] ?? null, $plsql);
+        }
+
+        $cursor = oci_new_cursor($this->connection);
+        oci_bind_by_name($stmt, ':cursor', $cursor, -1, OCI_B_CURSOR);
+
+        foreach ($inBinds as $key => $val) {
+            $bindKey = str_starts_with($key, ':') ? $key : ':' . $key;
+            oci_bind_by_name($stmt, $bindKey, $inBinds[$key]);
+        }
+
+        if (!@oci_execute($stmt)) {
+            $err = oci_error($stmt);
+            oci_free_statement($cursor);
+            oci_free_statement($stmt);
+            throw new OracleQueryException($err['message'] ?? 'Erreur exécution curseur PL/SQL', $err['code'] ?? 0, $err['offset'] ?? null, $plsql);
+        }
+
+        if (!@oci_execute($cursor)) {
+            $err = oci_error($cursor);
+            oci_free_statement($cursor);
+            oci_free_statement($stmt);
+            throw new OracleQueryException($err['message'] ?? 'Erreur lecture curseur PL/SQL', $err['code'] ?? 0, $err['offset'] ?? null, $plsql);
+        }
+
+        $results = [];
+        while (($row = oci_fetch_assoc($cursor)) !== false) {
+            $results[] = $row;
+        }
+
+        oci_free_statement($cursor);
+        oci_free_statement($stmt);
+        return $results;
+    }
+
+    /**
+     * Exécute un bloc PL/SQL avec variables OUT (ex: ['count' => [0, 32], 'details' => ['', 4000]])
+     */
+    public function executePlsqlOut(string $plsql, array &$outBinds, array $inBinds = []): void
+    {
+        $stmt = @oci_parse($this->connection, $plsql);
+        if (!$stmt) {
+            $err = oci_error($this->connection);
+            throw new OracleQueryException($err['message'] ?? 'Erreur parse PL/SQL OUT', $err['code'] ?? 0, $err['offset'] ?? null, $plsql);
+        }
+
+        foreach ($inBinds as $key => $val) {
+            $bindKey = str_starts_with($key, ':') ? $key : ':' . $key;
+            oci_bind_by_name($stmt, $bindKey, $inBinds[$key]);
+        }
+
+        $values = [];
+        foreach ($outBinds as $key => $spec) {
+            $bindKey = str_starts_with($key, ':') ? $key : ':' . $key;
+            $values[$key] = $spec[0] ?? '';
+            $maxLen = (int)($spec[1] ?? 4000);
+            oci_bind_by_name($stmt, $bindKey, $values[$key], $maxLen);
+        }
+
+        if (!@oci_execute($stmt, OCI_COMMIT_ON_SUCCESS)) {
+            $err = oci_error($stmt);
+            oci_free_statement($stmt);
+            throw new OracleQueryException($err['message'] ?? 'Erreur exécution PL/SQL OUT', $err['code'] ?? 0, $err['offset'] ?? null, $plsql);
+        }
+
+        oci_free_statement($stmt);
+        foreach ($values as $key => $val) {
+            $outBinds[$key] = $val;
+        }
+    }
+
     public function close(): void
     {
         if ($this->connection) {

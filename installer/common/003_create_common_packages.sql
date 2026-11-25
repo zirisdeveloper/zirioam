@@ -56,6 +56,11 @@ CREATE OR REPLACE PACKAGE C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AUTHID DEFINER
         p_correlation_id IN VARCHAR2 DEFAULT NULL
     );
 
+    -- Liste des PDBs ouvertes (READ WRITE) accessible en lecture aux développeurs pour le Self-Service
+    PROCEDURE get_open_pdbs (
+        p_cursor OUT SYS_REFCURSOR
+    );
+
 END PKG_ZIRIOAM_COMMON_OPS;
 /
 
@@ -239,6 +244,20 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
             log_audit('UNLOCK_ACCOUNT', v_oracle_user, 'Erreur déverrouillage : ' || SQLERRM, 'FAILED', p_dba_user);
             RAISE;
     END unlock_account;
+
+    PROCEDURE get_open_pdbs (
+        p_cursor OUT SYS_REFCURSOR
+    ) IS
+    BEGIN
+        OPEN p_cursor FOR
+            SELECT NAME AS PDB_NAME,
+                   OPEN_MODE,
+                   LOWER(NAME) AS SERVICE_NAME
+            FROM V$PDBS
+            WHERE NAME <> 'PDB$SEED'
+              AND OPEN_MODE = 'READ WRITE'
+            ORDER BY NAME;
+    END get_open_pdbs;
 
 END PKG_ZIRIOAM_COMMON_OPS;
 /
