@@ -30,22 +30,22 @@
                         <a class="nav-link" href="<?= zirioam_url('/developers') ?>">Développeurs</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="<?= zirioam_url('/roles') ?>">Gestion des Rôles</a>
+                        <a class="nav-link" href="<?= zirioam_url('/roles') ?>">Gestion Rôles</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="<?= zirioam_url('/access') ?>">Privilèges DDL / DML</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="<?= zirioam_url('/scripts') ?>">Moteur DDL / Scripts</a>
+                        <a class="nav-link" href="<?= zirioam_url('/scripts') ?>">Moteur DDL</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="<?= zirioam_url('/audit') ?>">Audit & Traçabilité</a>
+                        <a class="nav-link" href="<?= zirioam_url('/audit') ?>">Audit</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link text-warning" href="<?= zirioam_url('/installer/status?view=1') ?>">État Composants</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-info" href="<?= zirioam_url('/installer/maintenance') ?>">🛠️ Maintenance & Schémas</a>
+                        <a class="nav-link text-info" href="<?= zirioam_url('/installer/maintenance') ?>">🛠️ Maintenance</a>
                     </li>
                 </ul>
 
