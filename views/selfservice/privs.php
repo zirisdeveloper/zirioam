@@ -1,71 +1,63 @@
 <div class="py-3">
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
         <div>
-            <h2 class="h3 fw-bold text-dark mb-1">Synchronisation de mes Privilèges (Privs)</h2>
+            <h2 class="h3 fw-bold text-dark mb-1">Synchronisation des Privilèges (Privs)</h2>
             <p class="text-muted mb-0">
-                Lorsque de nouveaux objets sont créés dans un schéma autorisé, synchronisez vos droits pour obtenir immédiatement les privilèges associés.
+                Lorsque de nouveaux objets sont créés dans un schéma autorisé, synchronisez vos privilèges pour y accéder immédiatement.
             </p>
         </div>
-        <a href="<?= zirioam_url('/selfservice/pdbs') ?>" class="btn btn-outline-secondary">
-            🌐 Changer de PDB
-        </a>
+        <div class="d-flex gap-2">
+            <a href="<?= zirioam_url('/selfservice/pdbs') ?>" class="btn btn-outline-secondary">
+                🌐 Bases PDB
+            </a>
+            <?php if (!empty($activePdb)): ?>
+                <form action="<?= zirioam_url('/selfservice/privs/sync-all') ?>" method="POST" class="d-inline" onsubmit="return confirm('Lancer la synchronisation des privilèges sur toutes vos PDBs accessibles ?');">
+                    <?= zirioam_csrf_field() ?>
+                    <button type="submit" class="btn btn-outline-success">
+                        ⚡ Synchroniser toutes mes PDBs accessibles
+                    </button>
+                </form>
+            <?php endif; ?>
+        </div>
     </div>
 
-    <!-- Cartes d'Action de Synchronisation -->
-    <div class="row g-4 mb-4">
-        <!-- Action 1 : PDB sélectionnée -->
-        <div class="col-md-6">
-            <div class="card h-100 border-0 shadow-sm">
-                <div class="card-body p-4 d-flex flex-column justify-content-between">
-                    <div>
-                        <h5 class="fw-bold text-dark mb-2">
-                            🎯 PDB sélectionnée :
-                            <?php if (!empty($activePdb)): ?>
-                                <span class="badge bg-primary font-monospace"><?= e($activePdb) ?></span>
-                            <?php else: ?>
-                                <span class="badge bg-warning text-dark">Aucune</span>
-                            <?php endif; ?>
-                        </h5>
-                        <p class="small text-muted mb-3">
-                            Applique les privilèges de vos rôles fonctionnels (et <code>GRANT ALL</code> pour les profils <code>APP_ALL</code>) sur tous les objets de vos schémas dans cette PDB uniquement.
-                        </p>
-                    </div>
+    <!-- Carte principale de Synchronisation -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-4 d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+                <h5 class="fw-bold text-dark mb-1">
+                    🎯 PDB sélectionnée :
                     <?php if (!empty($activePdb)): ?>
-                        <form action="<?= zirioam_url('/selfservice/privs/sync-pdb') ?>" method="POST">
-                            <?= zirioam_csrf_field() ?>
-                            <input type="hidden" name="pdb_name" value="<?= e($activePdb) ?>">
-                            <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold shadow-sm">
-                                🔄 Synchroniser les privilèges sur <?= e($activePdb) ?>
-                            </button>
-                        </form>
+                        <span class="badge bg-primary font-monospace fs-6 ms-1"><?= e($activePdb) ?></span>
                     <?php else: ?>
-                        <a href="<?= zirioam_url('/selfservice/pdbs') ?>" class="btn btn-outline-primary w-100 fw-semibold">
-                            Choisir une PDB dans « Bases PDB » &rarr;
-                        </a>
+                        <span class="badge bg-warning text-dark ms-1">Aucune</span>
                     <?php endif; ?>
-                </div>
+                </h5>
+                <p class="small text-muted mb-0">
+                    <?php if (!empty($activePdb)): ?>
+                        Cliquez sur le bouton ci-contre pour appliquer vos privilèges (et <code>GRANT ALL</code> pour les profils <code>APP_ALL</code>) sur tous les objets de la PDB <strong><?= e($activePdb) ?></strong>.
+                    <?php else: ?>
+                        Aucune PDB n'est encore sélectionnée dans votre session. Choisissez une PDB dans « Bases PDB » ou synchronisez directement toutes vos PDBs accessibles.
+                    <?php endif; ?>
+                </p>
             </div>
-        </div>
-
-        <!-- Action 2 : Toutes les PDBs accessibles -->
-        <div class="col-md-6">
-            <div class="card h-100 border-0 shadow-sm border-start border-4 border-success">
-                <div class="card-body p-4 d-flex flex-column justify-content-between">
-                    <div>
-                        <h5 class="fw-bold text-dark mb-2">
-                            🌐 Toutes mes PDBs accessibles
-                        </h5>
-                        <p class="small text-muted mb-3">
-                            Parcourt automatiquement toutes les bases PDB auxquelles votre compte a accès sur ce serveur et met à jour l'ensemble de vos privilèges d'objets en une seule opération.
-                        </p>
-                    </div>
-                    <form action="<?= zirioam_url('/selfservice/privs/sync-all') ?>" method="POST" onsubmit="return confirm('Lancer la synchronisation des privilèges sur toutes vos PDBs accessibles ?');">
+            <div>
+                <?php if (!empty($activePdb)): ?>
+                    <form action="<?= zirioam_url('/selfservice/privs/sync-pdb') ?>" method="POST" class="m-0">
                         <?= zirioam_csrf_field() ?>
-                        <button type="submit" class="btn btn-success btn-lg w-100 fw-bold shadow-sm">
+                        <input type="hidden" name="pdb_name" value="<?= e($activePdb) ?>">
+                        <button type="submit" class="btn btn-primary btn-lg fw-bold shadow-sm">
+                            🔄 Synchroniser les objets du PDB <?= e($activePdb) ?>
+                        </button>
+                    </form>
+                <?php else: ?>
+                    <form action="<?= zirioam_url('/selfservice/privs/sync-all') ?>" method="POST" class="m-0" onsubmit="return confirm('Lancer la synchronisation des privilèges sur toutes vos PDBs accessibles ?');">
+                        <?= zirioam_csrf_field() ?>
+                        <button type="submit" class="btn btn-success btn-lg fw-bold shadow-sm">
                             ⚡ Synchroniser toutes mes PDBs accessibles
                         </button>
                     </form>
-                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>

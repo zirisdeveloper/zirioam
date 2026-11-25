@@ -55,11 +55,11 @@
                                         <span class="text-info">(CDB: <?= e($ssCdb) ?>)</span>
                                     <?php endif; ?>
                                 </div>
-                                <div class="text-light opacity-75" style="font-size: 0.75rem;">
-                                    <?= e($ssUser) ?>
+                                <div class="text-muted" style="font-size: 0.75rem;">
+                                    <span class="text-light opacity-75"><?= e($ssUser) ?></span>
                                     <span class="badge bg-secondary">DEV</span>
                                     <?php if (!empty($ssPdb)): ?>
-                                        &bull; PDB: <span class="text-warning fw-bold"><?= e($ssPdb) ?></span>
+                                        &bull; <span class="text-light opacity-75">PDB:</span> <span class="text-warning fw-bold"><?= e($ssPdb) ?></span>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -157,3 +157,4 @@
     <script src="<?= zirioam_asset('js/zirioam.js') ?>"></script>
 </body>
 </html>
+

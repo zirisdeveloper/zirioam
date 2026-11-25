@@ -186,6 +186,10 @@ class DeveloperPortalService
                 return new OracleConnection($host, $port, $svc, $username, $password, 'NORMAL');
             } catch (\Throwable $e) {
                 $lastEx = $e;
+                $code = method_exists($e, 'getOracleCode') ? (int)$e->getOracleCode() : 0;
+                if (in_array($code, [1045, 1017, 28000, 28001], true)) {
+                    break;
+                }
             }
         }
 
@@ -205,6 +209,7 @@ class DeveloperPortalService
         }
 
         $openPdbs = [];
+        $discoveryFailure = null;
         $rootConn = $this->connectToRoot();
         try {
             // 1. Méthode recommandée : Package CDB AUTHID DEFINER
@@ -216,7 +221,7 @@ class DeveloperPortalService
                 // 2. Fallback si droits directs en lecture du dictionnaire
                 try {
                     $openPdbs = $rootConn->query(
-                        "SELECT NAME AS PDB_NAME, OPEN_MODE, LOWER(NAME) AS SERVICE_NAME
+                        "SELECT CON_ID, NAME AS PDB_NAME, OPEN_MODE, RESTRICTED, LOWER(NAME) AS SERVICE_NAME
                          FROM V\$PDBS
                          WHERE NAME <> 'PDB\$SEED' AND OPEN_MODE = 'READ WRITE'
                          ORDER BY NAME"
@@ -224,16 +229,25 @@ class DeveloperPortalService
                 } catch (\Throwable $e2) {
                     try {
                         $openPdbs = $rootConn->query(
-                            "SELECT PDB_NAME, 'READ WRITE' AS OPEN_MODE, LOWER(PDB_NAME) AS SERVICE_NAME
+                            "SELECT CON_ID, PDB_NAME, 'READ WRITE' AS OPEN_MODE, 'NO' AS RESTRICTED, LOWER(PDB_NAME) AS SERVICE_NAME
                              FROM ALL_PDBS
                              WHERE PDB_NAME <> 'PDB\$SEED'
                              ORDER BY PDB_NAME"
                         );
-                    } catch (\Throwable $e3) {}
+                    } catch (\Throwable $e3) {
+                        $discoveryFailure = $e->getMessage();
+                    }
                 }
             }
         } finally {
             $rootConn->close();
+        }
+
+        if ($discoveryFailure !== null && empty($openPdbs)) {
+            throw new \RuntimeException(
+                "Impossible de lister les PDBs depuis CDB\$ROOT ({$discoveryFailure}). " .
+                "Demandez à l'administrateur de redéployer les composants CDB\$ROOT via « Maintenance »."
+            );
         }
 
         $result = [];
@@ -244,10 +258,14 @@ class DeveloperPortalService
             }
             $serviceName = strtolower(trim((string)($pdb['SERVICE_NAME'] ?? $pdbName)));
             $openMode = (string)($pdb['OPEN_MODE'] ?? 'READ WRITE');
+            $conId = (int)($pdb['CON_ID'] ?? 0);
+            $restricted = strtoupper(trim((string)($pdb['RESTRICTED'] ?? 'NO')));
 
             $entry = [
+                'CON_ID' => $conId,
                 'PDB_NAME' => $pdbName,
                 'OPEN_MODE' => $openMode,
+                'RESTRICTED' => $restricted,
                 'SERVICE_NAME' => $serviceName,
                 'ACCESSIBLE' => false,
                 'ZIRIOAM_DEPLOYED' => true,
@@ -410,3 +428,4 @@ class DeveloperPortalService
         return $results;
     }
 }
+

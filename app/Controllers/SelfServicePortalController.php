@@ -83,27 +83,30 @@ class SelfServicePortalController extends Controller
     }
 
     /**
-     * Menu "Bases PDB" : liste les PDBs accessibles et permet d'en choisir une
+     * Menu "Bases PDB" : liste uniquement les PDBs où le développeur dispose de privilèges actifs
      */
     public function pdbs(Request $request): Response
     {
-        $pdbs = [];
+        $accessiblePdbs = [];
         $discoverError = null;
         try {
-            $pdbs = $this->portalService->discoverAccessiblePdbs();
+            $allPdbs = $this->portalService->discoverAccessiblePdbs();
+            $accessiblePdbs = array_values(array_filter($allPdbs, static function (array $p): bool {
+                return !empty($p['ACCESSIBLE']);
+            }));
         } catch (\Throwable $e) {
             $discoverError = $e->getMessage();
         }
 
         return $this->render('selfservice/pdbs', [
-            'pdbs' => $pdbs,
+            'pdbs' => $accessiblePdbs,
             'discoverError' => $discoverError,
             'activeNav' => 'pdbs',
         ], 'selfservice_portal');
     }
 
     /**
-     * Sélectionne une PDB cible pour la session self-service développeur
+     * Sélectionne une PDB cible dans la session self-service développeur
      */
     public function selectPdb(Request $request, array $params): Response
     {
@@ -112,12 +115,12 @@ class SelfServicePortalController extends Controller
 
         try {
             $this->portalService->selectPdb($pdbName, $serviceName);
-            $this->flash('success', "PDB sélectionnée : {$pdbName}. Vous pouvez maintenant synchroniser vos privilèges.");
-            return $this->redirect('/selfservice/privs');
+            $this->flash('success', "PDB active sélectionnée : {$pdbName}. Vous pouvez maintenant ouvrir le menu « Privs » pour synchroniser ses objets.");
         } catch (\Throwable $e) {
             $this->flash('danger', $e->getMessage());
-            return $this->redirect('/selfservice/pdbs');
         }
+
+        return $this->redirect('/selfservice/pdbs');
     }
 
     /**
@@ -210,3 +213,4 @@ class SelfServicePortalController extends Controller
         return $this->redirect('/selfservice/privs');
     }
 }
+

@@ -250,8 +250,10 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
     ) IS
     BEGIN
         OPEN p_cursor FOR
-            SELECT NAME AS PDB_NAME,
+            SELECT CON_ID,
+                   NAME AS PDB_NAME,
                    OPEN_MODE,
+                   RESTRICTED,
                    LOWER(NAME) AS SERVICE_NAME
             FROM V$PDBS
             WHERE NAME <> 'PDB$SEED'
