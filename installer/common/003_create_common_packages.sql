@@ -251,21 +251,48 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS AS
     PROCEDURE get_open_pdbs (
         p_cursor OUT SYS_REFCURSOR
     ) IS
+        v_vpdb_cnt NUMBER := 0;
     BEGIN
-        OPEN p_cursor FOR
-            SELECT CON_ID,
-                   NAME AS PDB_NAME,
-                   OPEN_MODE,
-                   RESTRICTED,
-                   CASE
-                       WHEN SYS_CONTEXT('USERENV', 'DB_DOMAIN') IS NOT NULL
-                       THEN LOWER(NAME) || '.' || LOWER(SYS_CONTEXT('USERENV', 'DB_DOMAIN'))
-                       ELSE LOWER(NAME)
-                   END AS SERVICE_NAME
+        BEGIN
+            SELECT COUNT(*) INTO v_vpdb_cnt
             FROM V$PDBS
             WHERE NAME <> 'PDB$SEED'
-              AND OPEN_MODE = 'READ WRITE'
-            ORDER BY NAME;
+              AND OPEN_MODE = 'READ WRITE';
+        EXCEPTION WHEN OTHERS THEN
+            v_vpdb_cnt := 0;
+        END;
+
+        IF v_vpdb_cnt > 0 THEN
+            OPEN p_cursor FOR
+                SELECT CON_ID,
+                       NAME AS PDB_NAME,
+                       OPEN_MODE,
+                       RESTRICTED,
+                       CASE
+                           WHEN SYS_CONTEXT('USERENV', 'DB_DOMAIN') IS NOT NULL
+                           THEN LOWER(NAME) || '.' || LOWER(SYS_CONTEXT('USERENV', 'DB_DOMAIN'))
+                           ELSE LOWER(NAME)
+                       END AS SERVICE_NAME
+                FROM V$PDBS
+                WHERE NAME <> 'PDB$SEED'
+                  AND OPEN_MODE = 'READ WRITE'
+                ORDER BY NAME;
+        ELSE
+            OPEN p_cursor FOR
+                SELECT CON_ID,
+                       PDB_NAME,
+                       'READ WRITE' AS OPEN_MODE,
+                       'NO' AS RESTRICTED,
+                       CASE
+                           WHEN SYS_CONTEXT('USERENV', 'DB_DOMAIN') IS NOT NULL
+                           THEN LOWER(PDB_NAME) || '.' || LOWER(SYS_CONTEXT('USERENV', 'DB_DOMAIN'))
+                           ELSE LOWER(PDB_NAME)
+                       END AS SERVICE_NAME
+                FROM DBA_PDBS
+                WHERE PDB_NAME <> 'PDB$SEED'
+                  AND STATUS = 'NORMAL'
+                ORDER BY PDB_NAME;
+        END IF;
     END get_open_pdbs;
 
 END PKG_ZIRIOAM_COMMON_OPS;
@@ -289,21 +316,48 @@ CREATE OR REPLACE PACKAGE BODY C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_DEV_DISCOVERY AS
     PROCEDURE get_open_pdbs (
         p_cursor OUT SYS_REFCURSOR
     ) IS
+        v_vpdb_cnt NUMBER := 0;
     BEGIN
-        OPEN p_cursor FOR
-            SELECT CON_ID,
-                   NAME AS PDB_NAME,
-                   OPEN_MODE,
-                   RESTRICTED,
-                   CASE
-                       WHEN SYS_CONTEXT('USERENV', 'DB_DOMAIN') IS NOT NULL
-                       THEN LOWER(NAME) || '.' || LOWER(SYS_CONTEXT('USERENV', 'DB_DOMAIN'))
-                       ELSE LOWER(NAME)
-                   END AS SERVICE_NAME
+        BEGIN
+            SELECT COUNT(*) INTO v_vpdb_cnt
             FROM V$PDBS
             WHERE NAME <> 'PDB$SEED'
-              AND OPEN_MODE = 'READ WRITE'
-            ORDER BY NAME;
+              AND OPEN_MODE = 'READ WRITE';
+        EXCEPTION WHEN OTHERS THEN
+            v_vpdb_cnt := 0;
+        END;
+
+        IF v_vpdb_cnt > 0 THEN
+            OPEN p_cursor FOR
+                SELECT CON_ID,
+                       NAME AS PDB_NAME,
+                       OPEN_MODE,
+                       RESTRICTED,
+                       CASE
+                           WHEN SYS_CONTEXT('USERENV', 'DB_DOMAIN') IS NOT NULL
+                           THEN LOWER(NAME) || '.' || LOWER(SYS_CONTEXT('USERENV', 'DB_DOMAIN'))
+                           ELSE LOWER(NAME)
+                       END AS SERVICE_NAME
+                FROM V$PDBS
+                WHERE NAME <> 'PDB$SEED'
+                  AND OPEN_MODE = 'READ WRITE'
+                ORDER BY NAME;
+        ELSE
+            OPEN p_cursor FOR
+                SELECT CON_ID,
+                       PDB_NAME,
+                       'READ WRITE' AS OPEN_MODE,
+                       'NO' AS RESTRICTED,
+                       CASE
+                           WHEN SYS_CONTEXT('USERENV', 'DB_DOMAIN') IS NOT NULL
+                           THEN LOWER(PDB_NAME) || '.' || LOWER(SYS_CONTEXT('USERENV', 'DB_DOMAIN'))
+                           ELSE LOWER(PDB_NAME)
+                       END AS SERVICE_NAME
+                FROM DBA_PDBS
+                WHERE PDB_NAME <> 'PDB$SEED'
+                  AND STATUS = 'NORMAL'
+                ORDER BY PDB_NAME;
+        END IF;
     END get_open_pdbs;
 
 END PKG_ZIRIOAM_DEV_DISCOVERY;

@@ -176,9 +176,12 @@ class OracleInstallerService
                 $vaultConn->executeDdl("GRANT DV_ACCTMGR TO C##ZIRIOAM_ADMIN CONTAINER = ALL");
             } catch (\Throwable $e) {}
 
-            // 3. Droit d'exécution sur le package d'orchestration
+            // 3. Droit d'exécution sur le package de découverte et CONTAINER_DATA = ALL
             try {
-                $vaultConn->executeDdl("GRANT EXECUTE ON C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_COMMON_OPS TO PUBLIC CONTAINER = ALL");
+                $vaultConn->executeDdl("ALTER USER C##ZIRIOAM_ADMIN SET CONTAINER_DATA = ALL CONTAINER = CURRENT");
+            } catch (\Throwable $e) {}
+            try {
+                $vaultConn->executeDdl("GRANT EXECUTE ON C##ZIRIOAM_ADMIN.PKG_ZIRIOAM_DEV_DISCOVERY TO PUBLIC");
             } catch (\Throwable $e) {}
         } finally {
             $vaultConn->close();
