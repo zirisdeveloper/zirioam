@@ -148,13 +148,17 @@ class OracleConnectionService
     }
 
     /**
-     * Crée une connexion directe avec des identifiants spécifiques (ex: C##VOLTMANAGER)
+     * Crée une connexion directe avec des identifiants spécifiques (ex: C##voltmanager)
      */
-    public function createCustomConnection(string $username, string $password, string $mode = 'NORMAL'): ?OracleConnection
-    {
+    public function createCustomConnection(
+        string $username,
+        string $password,
+        string $mode = 'NORMAL',
+        ?string $serviceOverride = null
+    ): ?OracleConnection {
         $session = App::getInstance()->getSession();
         $server = $session->get('current_server');
-        $service = $session->get('current_service');
+        $service = $serviceOverride ?: $session->get('current_service');
 
         if (!$server || !$service) {
             return null;
@@ -173,7 +177,7 @@ class OracleConnectionService
     /**
      * Retourne une connexion active avec le compte Vault Manager s'il est configuré en session
      */
-    public function getVaultConnection(): ?OracleConnection
+    public function getVaultConnection(?string $serviceOverride = null): ?OracleConnection
     {
         $session = App::getInstance()->getSession();
         $vaultUser = (string)$session->get('vault_user', '');
@@ -184,7 +188,7 @@ class OracleConnectionService
         }
 
         try {
-            return $this->createCustomConnection($vaultUser, $vaultPassword, 'NORMAL');
+            return $this->createCustomConnection($vaultUser, $vaultPassword, 'NORMAL', $serviceOverride);
         } catch (\Throwable $e) {
             return null;
         }

@@ -273,7 +273,7 @@ class DeveloperController extends Controller
         $vaultUser = trim((string)$request->post('vault_user', ''));
         $vaultPassword = (string)$request->post('vault_password', '');
         if (!empty($vaultUser) && !empty($vaultPassword)) {
-            $this->session->set('vault_user', strtoupper($vaultUser));
+            $this->session->set('vault_user', $vaultUser);
             $this->session->set('vault_password', $vaultPassword);
         } else {
             if (empty($vaultPassword)) {
@@ -320,7 +320,7 @@ class DeveloperController extends Controller
         $vaultUser = trim((string)$request->post('vault_user', ''));
         $vaultPassword = (string)$request->post('vault_password', '');
         if (!empty($vaultUser) && !empty($vaultPassword)) {
-            $this->session->set('vault_user', strtoupper($vaultUser));
+            $this->session->set('vault_user', $vaultUser);
             $this->session->set('vault_password', $vaultPassword);
         } else {
             if (empty($vaultPassword)) {

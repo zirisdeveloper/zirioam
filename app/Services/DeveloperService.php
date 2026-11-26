@@ -953,7 +953,8 @@ class DeveloperService
         }
 
         // 2. Déverrouillage dans TOUTES les PDBs ouvertes + Ré-attribution de ZIRIOAM_DEV_BASE_ROLE et CREATE SESSION
-        $this->executeInCdbRoot(function() use ($oracleUser, $localRole, $commonRole, &$unlockedInPdbCount, &$errors) {
+        $blockingPdbWarnings = [];
+        $this->executeInCdbRoot(function() use ($connService, $explicitVaultUser, $explicitVaultPassword, $oracleUser, $localRole, $commonRole, &$unlockedInPdbCount, &$errors, &$blockingPdbWarnings) {
             try {
                 $openPdbs = $this->db->query("
                     SELECT NAME FROM V\$PDBS 
@@ -964,14 +965,34 @@ class DeveloperService
                     $pdbName = $pdb['NAME'] ?? '';
                     if (empty($pdbName)) continue;
 
+                    $pdbVaultConn = null;
+                    $getPdbVault = function() use (&$pdbVaultConn, $connService, $pdbName, $explicitVaultUser, $explicitVaultPassword) {
+                        if ($pdbVaultConn === null) {
+                            $pdbVaultConn = $this->openVaultConnectionForPdb($connService, $pdbName, $explicitVaultUser, $explicitVaultPassword) ?: false;
+                        }
+                        return $pdbVaultConn ?: null;
+                    };
+
                     try {
                         $this->db->switchContainer($pdbName);
 
-                        // A. Déverrouiller le compte utilisateur au niveau de la PDB
+                        // A. Déverrouiller le compte utilisateur au niveau de la PDB (DBA puis repli Vault)
+                        $pdbUnlocked = false;
                         try {
                             $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK");
+                            $pdbUnlocked = true;
+                        } catch (\Throwable $ue) {
+                            $vc = $getPdbVault();
+                            if ($vc) {
+                                try {
+                                    $vc->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK");
+                                    $pdbUnlocked = true;
+                                } catch (\Throwable $ve) {}
+                            }
+                        }
+                        if ($pdbUnlocked) {
                             $unlockedInPdbCount++;
-                        } catch (\Throwable $ue) {}
+                        }
 
                         // B. S'assurer que RL_<USER> existe et dispose de CREATE SESSION + ZIRIOAM_DEV_BASE_ROLE
                         try {
@@ -996,24 +1017,79 @@ class DeveloperService
                         } catch (\Throwable $g2) {}
 
                         // D. Réparer si un ancien verrouillage avait laissé DEFAULT_ROLE = 'NO' dans cette PDB
+                        $repairErr = null;
                         try {
                             $roleRows = $this->db->query(
-                                "SELECT GRANTED_ROLE, DEFAULT_ROLE FROM DBA_ROLE_PRIVS WHERE GRANTEE = :usr",
+                                "SELECT r.GRANTED_ROLE, r.DEFAULT_ROLE, NVL(dr.COMMON, 'NO') AS IS_COMMON
+                                 FROM DBA_ROLE_PRIVS r
+                                 LEFT JOIN DBA_ROLES dr ON dr.ROLE = r.GRANTED_ROLE
+                                 WHERE r.GRANTEE = :usr",
                                 ['usr' => $oracleUser]
                             );
                             $hasDisabledDefault = false;
-                            $grantedRoles = [];
+                            $allGranted = [];
+                            $localGranted = [];
                             foreach ($roleRows as $rr) {
                                 if (!empty($rr['GRANTED_ROLE'])) {
-                                    $grantedRoles[] = $rr['GRANTED_ROLE'];
+                                    $rName = $rr['GRANTED_ROLE'];
+                                    $allGranted[] = $rName;
+                                    if (strtoupper((string)($rr['IS_COMMON'] ?? 'NO')) === 'NO') {
+                                        $localGranted[] = $rName;
+                                    }
                                     if (strtoupper((string)($rr['DEFAULT_ROLE'] ?? '')) === 'NO') {
                                         $hasDisabledDefault = true;
                                     }
                                 }
                             }
-                            if ($hasDisabledDefault && !empty($grantedRoles)) {
-                                $roleList = implode(', ', $grantedRoles);
-                                $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE {$roleList}");
+
+                            if ($hasDisabledDefault && !empty($allGranted)) {
+                                $trySetDefaults = function(\App\Database\OracleConnection $conn) use ($oracleUser, $allGranted, $localGranted): void {
+                                    try {
+                                        $conn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE " . implode(', ', $allGranted));
+                                    } catch (\Throwable $e1) {
+                                        if (!empty($localGranted)) {
+                                            $conn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE " . implode(', ', $localGranted));
+                                        } else {
+                                            throw $e1;
+                                        }
+                                    }
+                                };
+
+                                try {
+                                    $trySetDefaults($this->db);
+                                } catch (\Throwable $de) {
+                                    $repairErr = $de->getMessage();
+                                    $vc = $getPdbVault();
+                                    if ($vc) {
+                                        try {
+                                            $trySetDefaults($vc);
+                                            $repairErr = null;
+                                        } catch (\Throwable $ve) {
+                                            $repairErr = $ve->getMessage();
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Vérification post-réparation sur les PDBs où le développeur possède un accès ZIRIOAM actif
+                            $hasActivePdbAccess = false;
+                            try {
+                                $baseNorm = str_starts_with($oracleUser, 'C##') ? substr($oracleUser, 3) : $oracleUser;
+                                $accRow = $this->db->queryOne(
+                                    "SELECT COUNT(*) AS CNT FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS WHERE UPPER(USERNAME) IN (:u, :b) AND STATUS = 'ACTIVE'",
+                                    ['u' => $oracleUser, 'b' => $baseNorm]
+                                );
+                                $hasActivePdbAccess = ((int)($accRow['CNT'] ?? 0)) > 0;
+                            } catch (\Throwable $ae) {}
+
+                            if ($hasActivePdbAccess) {
+                                $activeDef = $this->db->queryOne(
+                                    "SELECT COUNT(*) AS CNT FROM DBA_ROLE_PRIVS WHERE GRANTEE = :usr AND GRANTED_ROLE IN (:lr, :cr) AND DEFAULT_ROLE = 'YES'",
+                                    ['usr' => $oracleUser, 'lr' => $localRole, 'cr' => $commonRole]
+                                );
+                                if (((int)($activeDef['CNT'] ?? 0)) === 0) {
+                                    $blockingPdbWarnings[] = "{$pdbName}: les rôles par défaut ({$localRole}) restent désactivés (DEFAULT_ROLE=NO)" . ($repairErr ? " [{$repairErr}]" : "");
+                                }
                             }
                         } catch (\Throwable $re) {}
 
@@ -1024,12 +1100,23 @@ class DeveloperService
 
                     } catch (\Throwable $pe) {
                         $errors[] = "PDB {$pdbName}: " . $pe->getMessage();
+                    } finally {
+                        if ($pdbVaultConn instanceof \App\Database\OracleConnection) {
+                            try { $pdbVaultConn->close(); } catch (\Throwable $ce) {}
+                        }
                     }
                 }
             } catch (\Throwable $e) {
                 $errors[] = "PDB scan: " . $e->getMessage();
             }
         });
+
+        if (!empty($blockingPdbWarnings)) {
+            throw new \RuntimeException(
+                "Compte déverrouillé mais connexion PDB bloquée (ORA-01045) : " . implode(' | ', $blockingPdbWarnings) .
+                ". Exécutez sous un compte habilité dans la PDB : ALTER USER {$oracleUser} DEFAULT ROLE {$localRole};"
+            );
+        }
 
         // 3. VÉRIFICATION : Le compte est-il déverrouillé dans CDB$ROOT ou dans au moins une PDB ?
         $actuallyUnlocked = $unlockedInRoot || ($unlockedInPdbCount > 0);
@@ -1099,6 +1186,47 @@ class DeveloperService
                 return [];
             }
         });
+    }
+
+    /**
+     * Ouvre une connexion Database Vault positionnée sur une PDB cible
+     * (switchContainer ou reconnexion directe au service PDB).
+     */
+    private function openVaultConnectionForPdb(
+        OracleConnectionService $connService,
+        string $pdbName,
+        ?string $explicitVaultUser = null,
+        ?string $explicitVaultPassword = null
+    ): ?\App\Database\OracleConnection {
+        if (empty($explicitVaultUser) || empty($explicitVaultPassword)) {
+            $sess = \App\Core\App::getInstance()->getSession();
+            $explicitVaultUser = (string)$sess->get('vault_user', '');
+            $explicitVaultPassword = (string)$sess->get('vault_password', '');
+        }
+        if (empty($explicitVaultUser) || empty($explicitVaultPassword)) {
+            return null;
+        }
+
+        // Essai 1 : connexion directe au service PDB (évite les blocages SET CONTAINER sous DV)
+        try {
+            $direct = $connService->createCustomConnection($explicitVaultUser, $explicitVaultPassword, 'NORMAL', strtolower($pdbName));
+            if ($direct) {
+                return $direct;
+            }
+        } catch (\Throwable $e) {}
+
+        // Essai 2 : connexion standard puis switchContainer($pdbName)
+        try {
+            $conn = $connService->createCustomConnection($explicitVaultUser, $explicitVaultPassword, 'NORMAL');
+            if ($conn) {
+                if (strtoupper($conn->getCurrentContainer()) !== strtoupper($pdbName)) {
+                    $conn->switchContainer($pdbName);
+                }
+                return $conn;
+            }
+        } catch (\Throwable $e) {}
+
+        return null;
     }
 }
 

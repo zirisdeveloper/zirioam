@@ -2,6 +2,12 @@
     $hasAccount = ((int)($developer['ORACLE_ACCOUNT_EXISTS'] ?? 0)) > 0;
     $oraStatus = $developer['ORACLE_ACCOUNT_STATUS'] ?? 'NON CRÉÉ';
     $isLocked = str_contains($oraStatus, 'LOCKED');
+
+    $sessVaultUser = (string)\App\Core\App::getInstance()->getSession()->get('vault_user', '');
+    $sessVaultPass = (string)\App\Core\App::getInstance()->getSession()->get('vault_password', '');
+    $hasActiveVault = !empty($sessVaultUser) && !empty($sessVaultPass);
+    $sessVault = $sessVaultUser;
+    $defaultVaultUser = $sessVaultUser !== '' ? $sessVaultUser : 'C##voltmanager';
 ?>
 <div class="py-2">
     <!-- En-tête -->
@@ -122,12 +128,6 @@
                                 </div>
                             </div>
 
-                            <?php 
-                            $sessVaultUser = (string)\App\Core\App::getInstance()->getSession()->get('vault_user', ''); 
-                            $sessVaultPass = (string)\App\Core\App::getInstance()->getSession()->get('vault_password', '');
-                            $hasActiveVault = !empty($sessVaultUser) && !empty($sessVaultPass);
-                            $sessVault = $sessVaultUser;
-                            ?>
                             <?php if ($hasActiveVault): ?>
                                 <div class="alert alert-light border small py-2 mb-3 d-flex align-items-center">
                                     <span class="badge bg-success me-2">🛡️ Database Vault</span>
@@ -141,7 +141,7 @@
                                     </div>
                                     <div class="row g-2">
                                         <div class="col-sm-6">
-                                            <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="<?= e($sessVaultUser ?: 'C##VOLTMANAGER') ?>">
+                                            <input type="text" name="vault_user" class="form-control form-control-sm font-monospace" placeholder="C##voltmanager" value="<?= e($defaultVaultUser) ?>">
                                         </div>
                                         <div class="col-sm-6">
                                             <input type="password" name="vault_password" class="form-control form-control-sm" placeholder="Mot de passe Vault">
@@ -320,7 +320,7 @@
                                 <div class="row g-2">
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Utilisateur Vault :</label>
-                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="<?= e($sessVaultUser ?: 'C##VOLTMANAGER') ?>">
+                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace" placeholder="C##voltmanager" value="<?= e($defaultVaultUser) ?>">
                                     </div>
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Mot de passe Vault :</label>
@@ -387,7 +387,7 @@
                                 <div class="row g-2">
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Utilisateur Vault :</label>
-                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" value="<?= e($sessVaultUser) ?>">
+                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace" value="<?= e($defaultVaultUser) ?>">
                                     </div>
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Nouveau mot de passe :</label>
@@ -408,7 +408,7 @@
                             <div class="row g-2">
                                 <div class="col-sm-6">
                                     <label class="form-label small fw-semibold mb-1">Compte Vault Manager :</label>
-                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="<?= e($sessVaultUser ?: 'C##VOLTMANAGER') ?>" required>
+                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace" placeholder="C##voltmanager" value="<?= e($defaultVaultUser) ?>" required>
                                 </div>
                                 <div class="col-sm-6">
                                     <label class="form-label small fw-semibold mb-1">Mot de passe Vault :</label>
@@ -458,7 +458,7 @@
                                 <div class="row g-2">
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Utilisateur Vault :</label>
-                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" value="<?= e($sessVaultUser) ?>">
+                                        <input type="text" name="vault_user" class="form-control form-control-sm font-monospace" value="<?= e($defaultVaultUser) ?>">
                                     </div>
                                     <div class="col-sm-6">
                                         <label class="form-label extra-small text-muted mb-0">Nouveau mot de passe :</label>
@@ -479,7 +479,7 @@
                             <div class="row g-2">
                                 <div class="col-sm-6">
                                     <label class="form-label small fw-semibold mb-1">Compte Vault Manager :</label>
-                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace text-uppercase" placeholder="C##VOLTMANAGER" value="<?= e($sessVaultUser ?: 'C##VOLTMANAGER') ?>" required>
+                                    <input type="text" name="vault_user" class="form-control form-control-sm font-monospace" placeholder="C##voltmanager" value="<?= e($defaultVaultUser) ?>" required>
                                 </div>
                                 <div class="col-sm-6">
                                     <label class="form-label small fw-semibold mb-1">Mot de passe Vault :</label>
