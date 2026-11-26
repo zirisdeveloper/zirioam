@@ -168,11 +168,6 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
 
-        BEGIN
-            EXECUTE IMMEDIATE 'ALTER USER ' || v_common_user || ' DEFAULT ROLE ALL';
-        EXCEPTION WHEN OTHERS THEN NULL;
-        END;
-
         log_audit('GRANT_SESSION', v_common_user, NULL, v_local_role, 'SUCCESS', 'Rôle local session configuré sur PDB', p_granted_by);
     EXCEPTION
         WHEN OTHERS THEN
@@ -258,11 +253,6 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_PDB_ACCESS AS
         -- Attribution du rôle local au compte développeur dans la PDB
         BEGIN
             EXECUTE IMMEDIATE 'GRANT ' || v_local_role || ' TO ' || v_common_user || ' CONTAINER = CURRENT';
-        EXCEPTION WHEN OTHERS THEN NULL;
-        END;
-
-        BEGIN
-            EXECUTE IMMEDIATE 'ALTER USER ' || v_common_user || ' DEFAULT ROLE ALL';
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
 

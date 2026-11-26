@@ -36,7 +36,6 @@ class RoleHierarchyTest
             "CREATE ROLE {$commonRole} CONTAINER = ALL",
             "GRANT CREATE SESSION TO {$commonRole} CONTAINER = ALL",
             "GRANT {$commonRole} TO {$commonUser} CONTAINER = ALL",
-            "ALTER USER {$commonUser} DEFAULT ROLE ALL CONTAINER = ALL",
         ];
 
         assert(strpos($cdbOrders[1], 'CONTAINER = ALL') !== false, "Rôle commun créé avec CONTAINER=ALL");
@@ -56,7 +55,6 @@ class RoleHierarchyTest
             "GRANT {$targetRole} TO {$localRole}",
             "GRANT {$localRole} TO {$commonRole} CONTAINER = CURRENT",
             "GRANT {$localRole} TO {$commonUser} CONTAINER = CURRENT",
-            "ALTER USER {$commonUser} DEFAULT ROLE ALL",
         ];
 
         assert($pdbOrders[0] === 'CREATE ROLE RL_USER1', "Création du rôle local RL_USER1");

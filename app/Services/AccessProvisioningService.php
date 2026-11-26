@@ -680,7 +680,7 @@ class AccessProvisioningService
 
         $devUsernames = array_unique(array_filter($devUsernames));
 
-        // 3. Pour chaque développeur, appliquer les quotas illimités et restaurer les rôles de session / DEFAULT ROLE ALL
+        // 3. Pour chaque développeur, appliquer les quotas illimités et restaurer les rôles de session
         $vaultConn = null;
         try {
             $vaultConn = (new OracleConnectionService())->getVaultConnection();
@@ -698,7 +698,7 @@ class AccessProvisioningService
                 $localRole = 'RL_' . $base;
                 $hasPdbAccess = isset($activePdbBaseUsers[$base]);
 
-                $this->ensureDeveloperPdbSessionAndDefaultRoles($pdbName, $u, $hasPdbAccess, $vaultConn);
+                $this->ensureDeveloperPdbSessionRoles($pdbName, $u, $hasPdbAccess, $vaultConn);
                 $this->grantTablespaceQuotaForSchema($u, '', $localRole);
                 $updatedDevs++;
             }
@@ -715,11 +715,11 @@ class AccessProvisioningService
     }
 
     /**
-     * Restaure dans la PDB cible le rôle commun, les rôles par défaut (DEFAULT ROLE ALL)
-     * et, si le développeur dispose d'accès actifs dans cette PDB, le rôle local RL_<USER> + CREATE SESSION.
-     * Utilise la connexion Database Vault en repli si ALTER USER est restreint (ORA-47410).
+     * Restaure dans la PDB cible le rôle commun et, si le développeur dispose d'accès actifs
+     * dans cette PDB, le rôle local RL_<USER> + CREATE SESSION.
+     * Utilise la connexion Database Vault en repli si les privilèges ou ACCOUNT UNLOCK sont restreints.
      */
-    private function ensureDeveloperPdbSessionAndDefaultRoles(
+    private function ensureDeveloperPdbSessionRoles(
         string $pdbName,
         string $username,
         bool $ensureLocalRole = true,
@@ -731,25 +731,33 @@ class AccessProvisioningService
         $commonRole = 'C##RL_' . $base;
         $localRole  = 'RL_' . $base;
 
-        try { $this->db->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = CURRENT"); } catch (\Throwable $e) {}
+        $grantErr = null;
+        try {
+            $this->db->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = CURRENT");
+        } catch (\Throwable $e) {
+            $grantErr = $e;
+        }
 
         if ($ensureLocalRole) {
             try { $this->db->executeDdl("CREATE ROLE {$localRole}"); } catch (\Throwable $e) {}
             try { $this->db->executeDdl("GRANT CREATE SESSION TO {$localRole}"); } catch (\Throwable $e) {}
             try { $this->db->executeDdl("GRANT ZIRIOAM_DEV_BASE_ROLE TO {$localRole}"); } catch (\Throwable $e) {}
             try { $this->db->executeDdl("GRANT {$localRole} TO {$commonRole} CONTAINER = CURRENT"); } catch (\Throwable $e) {}
-            try { $this->db->executeDdl("GRANT {$localRole} TO {$oracleUser} CONTAINER = CURRENT"); } catch (\Throwable $e) {}
+            try {
+                $this->db->executeDdl("GRANT {$localRole} TO {$oracleUser} CONTAINER = CURRENT");
+            } catch (\Throwable $e) {
+                $grantErr = $e;
+            }
         }
 
-        $defaultErr = null;
+        $unlockErr = null;
         try {
-            $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL");
-            try { $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK"); } catch (\Throwable $e) {}
+            $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK");
         } catch (\Throwable $e) {
-            $defaultErr = $e;
+            $unlockErr = $e;
         }
 
-        if ($defaultErr !== null) {
+        if ($grantErr !== null || $unlockErr !== null) {
             $ownsVaultConn = false;
             $vc = $vaultConn;
             if (!$vc) {
@@ -770,7 +778,6 @@ class AccessProvisioningService
                     if ($ensureLocalRole) {
                         try { $vc->executeDdl("GRANT {$localRole} TO {$oracleUser} CONTAINER = CURRENT"); } catch (\Throwable $ve) {}
                     }
-                    $vc->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL");
                     try { $vc->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK"); } catch (\Throwable $ve) {}
                 } catch (\Throwable $ve) {}
 
@@ -815,11 +822,6 @@ class AccessProvisioningService
             // 3. Attribuer le rôle commun au compte utilisateur
             try {
                 $this->db->executeDdl("GRANT {$commonRole} TO {$commonUser} CONTAINER = ALL");
-            } catch (\Throwable $e) {}
-
-            // 4. Définir le rôle par défaut
-            try {
-                $this->db->executeDdl("ALTER USER {$commonUser} DEFAULT ROLE ALL CONTAINER = ALL");
             } catch (\Throwable $e) {}
         } finally {
             if ($previousContainer && $previousContainer !== 'CDB$ROOT') {
@@ -932,8 +934,8 @@ class AccessProvisioningService
             // Tolérance si Oracle restreint l'attribution d'un rôle local à un rôle commun (ORA-65033/ORA-65030)
         }
 
-        // 5. Attribuer également le rôle local + rôle commun + DEFAULT ROLE ALL (avec repli Vault) dans la PDB
-        $this->ensureDeveloperPdbSessionAndDefaultRoles($pdbName, $oracleUser, true);
+        // 5. Attribuer également le rôle local + rôle commun (avec repli Vault) dans la PDB
+        $this->ensureDeveloperPdbSessionRoles($pdbName, $oracleUser, true);
 
         // 6. Résolution ORA-01950 : Accorder le quota illimité sur les tablespaces du schéma cible et UNLIMITED TABLESPACE
         try {

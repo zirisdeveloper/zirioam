@@ -267,9 +267,6 @@ class DeveloperService
                 try {
                     $vaultConn->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
                 } catch (\Throwable $e) {}
-                try {
-                    $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
-                } catch (\Throwable $e) {}
             } catch (\Throwable $ve) {
                 // Si échec sur vaultConn, continuer vers les alternatives
             } finally {
@@ -363,8 +360,7 @@ class DeveloperService
                 $conn->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
             };
 
-            $applyDefaultRoleAndUnlock = function(\App\Database\OracleConnection $conn) use ($oracleUser) {
-                $conn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
+            $applyUnlock = function(\App\Database\OracleConnection $conn) use ($oracleUser) {
                 try {
                     $conn->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = ALL");
                 } catch (\Throwable $e) {}
@@ -372,7 +368,6 @@ class DeveloperService
 
             $grantsOk = false;
             $grantErr = null;
-            $defaultRoleErr = null;
 
             try {
                 $applyRoleGrants($this->db);
@@ -382,15 +377,10 @@ class DeveloperService
             }
 
             if ($grantsOk) {
-                try {
-                    $applyDefaultRoleAndUnlock($this->db);
-                } catch (\Throwable $e) {
-                    $defaultRoleErr = $e;
-                }
+                $applyUnlock($this->db);
             }
 
             // Repli via connexion Database Vault active si le DBA principal est restreint
-            // (ou si ALTER USER ... DEFAULT ROLE ALL a échoué sous Vault)
             $vaultConn = null;
             try {
                 $vaultConn = (new OracleConnectionService())->getVaultConnection();
@@ -398,24 +388,17 @@ class DeveloperService
                 $vaultConn = null;
             }
 
-            if ((!$grantsOk || $defaultRoleErr !== null) && $vaultConn) {
+            if (!$grantsOk && $vaultConn) {
                 try {
                     if ($vaultConn->getCurrentContainer() !== 'CDB$ROOT') {
                         $vaultConn->switchContainer('CDB$ROOT');
                     }
-                    if (!$grantsOk) {
-                        $applyRoleGrants($vaultConn);
-                        $grantsOk = true;
-                        $grantErr = null;
-                    }
-                    $applyDefaultRoleAndUnlock($vaultConn);
-                    $defaultRoleErr = null;
+                    $applyRoleGrants($vaultConn);
+                    $grantsOk = true;
+                    $grantErr = null;
+                    $applyUnlock($vaultConn);
                 } catch (\Throwable $ve) {
-                    if (!$grantsOk) {
-                        $grantErr = $ve;
-                    } else {
-                        $defaultRoleErr = $ve;
-                    }
+                    $grantErr = $ve;
                 }
             }
 
@@ -426,8 +409,7 @@ class DeveloperService
                 throw $grantErr ?: new \RuntimeException("Impossible d'accorder CREATE SESSION au rôle {$commonRole}.");
             }
 
-            // Réparer également les éventuelles surcharges locales (DEFAULT ROLE NONE, rôle local RL_<USER>)
-            // dans les PDBs ouvertes en lecture/écriture (ex: après un verrouillage/déverrouillage).
+            // Réparer également les rôles locaux RL_<USER> dans les PDBs ouvertes en lecture/écriture
             try {
                 $openPdbs = $this->db->query(
                     "SELECT NAME FROM V\$PDBS WHERE OPEN_MODE LIKE 'READ WRITE%' AND NAME != 'PDB\$SEED' ORDER BY NAME"
@@ -461,22 +443,20 @@ class DeveloperService
                             try { $this->db->executeDdl("GRANT {$localRole} TO {$oracleUser} CONTAINER = CURRENT"); } catch (\Throwable $e) {}
                         }
 
-                        $pdbDefaultErr = null;
+                        $unlockErr = null;
                         try {
-                            $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL");
-                            try { $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK"); } catch (\Throwable $e) {}
+                            $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK");
                         } catch (\Throwable $e) {
-                            $pdbDefaultErr = $e;
+                            $unlockErr = $e;
                         }
 
-                        if ($pdbDefaultErr !== null && $vaultConn) {
+                        if ($unlockErr !== null && $vaultConn) {
                             try {
                                 $vaultConn->switchContainer($pdbName);
                                 try { $vaultConn->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = CURRENT"); } catch (\Throwable $ve) {}
                                 if ($hasActiveAccess) {
                                     try { $vaultConn->executeDdl("GRANT {$localRole} TO {$oracleUser} CONTAINER = CURRENT"); } catch (\Throwable $ve) {}
                                 }
-                                $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL");
                                 try { $vaultConn->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK"); } catch (\Throwable $ve) {}
                             } catch (\Throwable $ve) {}
                         }
@@ -488,18 +468,6 @@ class DeveloperService
                 try { $this->db->switchContainer('CDB$ROOT'); } catch (\Throwable $ce) {}
                 if ($vaultConn) {
                     try { $vaultConn->close(); } catch (\Throwable $ce) {}
-                }
-            }
-
-            if ($defaultRoleErr !== null) {
-                // Si ALTER USER ... DEFAULT ROLE ALL a échoué (ex: ORA-47410 Database Vault sans Vault Manager),
-                // remonter une exception explicite uniquement si ce n'est pas déjà couvert, ou laisser l'admin le voir?
-                // Non : on log/propage si Database Vault bloque afin que l'admin sache connecter Vault Manager.
-                $code = method_exists($defaultRoleErr, 'getOracleCode') ? (int)$defaultRoleErr->getOracleCode() : 0;
-                if ($code === 47410 || strpos($defaultRoleErr->getMessage(), 'ORA-47410') !== false || strpos($defaultRoleErr->getMessage(), 'ORA-01031') !== false) {
-                    throw new \RuntimeException(
-                        "Le privilège CREATE SESSION a été accordé à {$commonRole}, mais Oracle Database Vault bloque 'ALTER USER {$oracleUser} DEFAULT ROLE ALL' (" . $defaultRoleErr->getMessage() . "). Connectez le compte Database Vault Manager (en haut à droite) et réessayez."
-                    );
                 }
             }
 
@@ -951,12 +919,9 @@ class DeveloperService
                     }
                 }
 
-                // Réattribuer le rôle commun et réactiver les rôles par défaut via Vault
+                // Réattribuer le rôle commun via Vault
                 try {
                     $vaultConn->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
-                } catch (\Throwable $e) {}
-                try {
-                    $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
                 } catch (\Throwable $e) {}
             } finally {
                 $vaultConn->close();
@@ -994,12 +959,9 @@ class DeveloperService
                     $errors[] = "DBA root unlock: " . $de3->getMessage();
                 }
 
-                // Réactiver les rôles par défaut dans CDB$ROOT via DBA
+                // Réattribuer le rôle commun dans CDB$ROOT via DBA
                 try {
                     $this->db->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
-                } catch (\Throwable $e) {}
-                try {
-                    $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL CONTAINER = ALL");
                 } catch (\Throwable $e) {}
             });
         }
@@ -1041,11 +1003,6 @@ class DeveloperService
                     try {
                         $this->db->executeDdl("GRANT {$localRole} TO C##{$localRole} CONTAINER = CURRENT");
                     } catch (\Throwable $g2) {}
-
-                    // E. Réactiver DEFAULT ROLE ALL dans la PDB
-                    try {
-                        $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE ALL");
-                    } catch (\Throwable $de) {}
 
                 } catch (\Throwable $pe) {
                     $errors[] = "PDB {$pdbName}: " . $pe->getMessage();
