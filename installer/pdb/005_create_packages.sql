@@ -371,6 +371,19 @@ END PKG_ZIRIOAM_PDB_ACCESS;
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE PACKAGE ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AUTHID DEFINER AS
 
+    -- Trace autonome d'une exécution DDL (utilisée par le package et le trigger BEFORE DDL)
+    PROCEDURE log_ddl_execution (
+        p_username    IN VARCHAR2,
+        p_schema      IN VARCHAR2,
+        p_op          IN VARCHAR2,
+        p_obj_type    IN VARCHAR2,
+        p_obj_name    IN VARCHAR2,
+        p_ddl         IN CLOB,
+        p_status      IN VARCHAR2,
+        p_err_code    IN NUMBER,
+        p_err_msg     IN VARCHAR2
+    );
+
     -- Exécute un ordre DDL validé sans accorder de privilège ANY au développeur
     PROCEDURE execute_controlled_ddl (
         p_target_schema IN VARCHAR2,
@@ -506,6 +519,187 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AS
     END execute_controlled_ddl;
 
 END PKG_ZIRIOAM_DDL_ENGINE;
+/
+
+-- Attribution préalable du privilège de création de trigger base de données à ZIRIOAM_OWNER
+BEGIN
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT ADMINISTER DATABASE TRIGGER TO ZIRIOAM_OWNER';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+END;
+/
+
+-- ---------------------------------------------------------------------
+-- 2b. TRIGGER PDB : TRG_ZIRIOAM_CONTROLLED_DDL
+-- Permet l'exécution directe des ordres DDL (SQL*Plus / SQL Developer)
+-- via les privilèges ANY attribués à RL_<USER>, tout en bloquant tout
+-- schéma ou opération non autorisée dans ZIRIOAM_DEVELOPER_ACCESS.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE TRIGGER ZIRIOAM_OWNER.TRG_ZIRIOAM_CONTROLLED_DDL
+BEFORE DDL ON PLUGGABLE DATABASE
+DECLARE
+    v_caller         VARCHAR2(128);
+    v_current_user   VARCHAR2(128);
+    v_base_caller    VARCHAR2(128);
+    v_local_role     VARCHAR2(128);
+    v_sysevent       VARCHAR2(30);
+    v_obj_owner      VARCHAR2(128);
+    v_obj_type       VARCHAR2(30);
+    v_obj_name       VARCHAR2(128);
+    v_is_zirioam_dev NUMBER := 0;
+    v_can_create     NUMBER := 0;
+    v_can_alter      NUMBER := 0;
+    v_can_drop       NUMBER := 0;
+    v_exists         NUMBER := 0;
+    v_allowed        BOOLEAN := FALSE;
+    v_sql_list       ora_name_list_t;
+    v_sql_count      BINARY_INTEGER;
+    v_sql_raw        CLOB := NULL;
+    v_sql_upper      VARCHAR2(4000) := '';
+    v_deny_msg       VARCHAR2(4000);
+BEGIN
+    v_caller       := UPPER(TRIM(SYS_CONTEXT('USERENV', 'SESSION_USER')));
+    v_current_user := UPPER(TRIM(SYS_CONTEXT('USERENV', 'CURRENT_USER')));
+    v_sysevent     := UPPER(TRIM(ora_sysevent));
+    v_obj_owner    := UPPER(TRIM(ora_dict_obj_owner));
+    v_obj_type     := UPPER(TRIM(ora_dict_obj_type));
+    v_obj_name     := UPPER(TRIM(ora_dict_obj_name));
+
+    -- 1. Ne filtrer que les opérations DDL d'objets applicatifs (hors SYSTEM/ZIRIOAM/propre schéma)
+    IF v_sysevent NOT IN ('CREATE', 'ALTER', 'DROP') THEN
+        RETURN;
+    END IF;
+
+    IF v_obj_type NOT IN (
+        'TABLE', 'VIEW', 'INDEX', 'SEQUENCE', 'PROCEDURE', 'FUNCTION',
+        'PACKAGE', 'PACKAGE BODY', 'TRIGGER', 'TYPE', 'TYPE BODY', 'SYNONYM'
+    ) THEN
+        RETURN;
+    END IF;
+
+    IF v_caller IN ('SYS', 'SYSTEM', 'ZIRIOAM_OWNER', 'C##ZIRIOAM_ADMIN', 'DVSYS', 'DVF', 'LBACSYS', 'AUDSYS')
+       OR v_current_user IN ('SYS', 'SYSTEM', 'ZIRIOAM_OWNER', 'C##ZIRIOAM_ADMIN') THEN
+        RETURN;
+    END IF;
+
+    IF v_obj_owner IS NULL OR v_obj_owner = v_caller THEN
+        RETURN;
+    END IF;
+
+    -- 2. Vérifier si l'appelant est un développeur géré par ZIRIOAM dans cette PDB
+    v_base_caller := CASE WHEN v_caller LIKE 'C##%' THEN SUBSTR(v_caller, 4) ELSE v_caller END;
+    v_local_role  := 'RL_' || v_base_caller;
+
+    BEGIN
+        SELECT COUNT(*) INTO v_is_zirioam_dev
+        FROM DBA_ROLE_PRIVS
+        WHERE UPPER(GRANTEE) IN (v_caller, 'C##' || v_base_caller, 'C##RL_' || v_base_caller)
+          AND GRANTED_ROLE = v_local_role;
+    EXCEPTION WHEN OTHERS THEN
+        v_is_zirioam_dev := 0;
+    END;
+
+    IF v_is_zirioam_dev = 0 THEN
+        BEGIN
+            SELECT COUNT(*) INTO v_is_zirioam_dev
+            FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS
+            WHERE UPPER(USERNAME) IN (v_caller, v_base_caller, 'C##' || v_base_caller);
+        EXCEPTION WHEN OTHERS THEN
+            v_is_zirioam_dev := 0;
+        END;
+    END IF;
+
+    -- Laisser passer les comptes DBA / applicatifs indépendants non gérés par ZIRIOAM
+    IF v_is_zirioam_dev = 0 THEN
+        RETURN;
+    END IF;
+
+    -- 3. Récupération du texte SQL de l'ordre DDL
+    BEGIN
+        v_sql_count := ora_sql_txt(v_sql_list);
+        IF v_sql_count IS NOT NULL AND v_sql_count > 0 THEN
+            FOR i IN 1 .. v_sql_count LOOP
+                IF v_sql_raw IS NULL THEN
+                    v_sql_raw := v_sql_list(i);
+                ELSE
+                    v_sql_raw := v_sql_raw || v_sql_list(i);
+                END IF;
+                IF LENGTH(v_sql_upper) < 3900 THEN
+                    v_sql_upper := v_sql_upper || UPPER(SUBSTR(v_sql_list(i), 1, 3900 - NVL(LENGTH(v_sql_upper), 0)));
+                END IF;
+            END LOOP;
+        END IF;
+    EXCEPTION WHEN OTHERS THEN
+        v_sql_upper := '';
+    END;
+
+    -- 4. Blocage des clauses dangereuses (anti-élévation de privilèges)
+    IF v_sql_upper IS NOT NULL AND (
+        INSTR(v_sql_upper, 'ORGANIZATION EXTERNAL') > 0 OR
+        INSTR(v_sql_upper, 'DBMS_SYS_SQL') > 0 OR
+        INSTR(v_sql_upper, 'ALTER SYSTEM') > 0 OR
+        INSTR(v_sql_upper, 'ALTER DATABASE') > 0
+    ) THEN
+        v_deny_msg := 'ZIRI OAM : Clause de sécurité interdite détectée dans l''instruction DDL.';
+        ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE.log_ddl_execution(
+            v_caller, v_obj_owner, v_sysevent, v_obj_type, v_obj_name, v_sql_raw, 'REJECTED', -20002, v_deny_msg
+        );
+        RAISE_APPLICATION_ERROR(-20002, v_deny_msg);
+    END IF;
+
+    -- 5. Contrôle des habilitations sur le schéma cible dans ZIRIOAM_DEVELOPER_ACCESS
+    SELECT NVL(MAX(CAN_DDL_CREATE), 0),
+           NVL(MAX(CAN_DDL_ALTER), 0),
+           NVL(MAX(CAN_DDL_DROP), 0)
+    INTO v_can_create, v_can_alter, v_can_drop
+    FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS
+    WHERE UPPER(USERNAME) IN (v_caller, v_base_caller, 'C##' || v_base_caller)
+      AND TARGET_SCHEMA = v_obj_owner
+      AND STATUS = 'ACTIVE';
+
+    IF v_sysevent = 'CREATE' THEN
+        IF v_sql_upper IS NOT NULL
+           AND REGEXP_LIKE(LTRIM(v_sql_upper), '^CREATE[[:space:]]+OR[[:space:]]+REPLACE[[:space:]]+') THEN
+            SELECT COUNT(*) INTO v_exists
+            FROM DBA_OBJECTS
+            WHERE OWNER = v_obj_owner
+              AND OBJECT_NAME = v_obj_name
+              AND OBJECT_TYPE = v_obj_type;
+            IF v_exists > 0 THEN
+                v_allowed := (v_can_alter = 1 OR v_can_create = 1);
+            ELSE
+                v_allowed := (v_can_create = 1);
+            END IF;
+        ELSE
+            v_allowed := (v_can_create = 1);
+        END IF;
+    ELSIF v_sysevent = 'ALTER' THEN
+        IF v_can_alter = 1 THEN
+            v_allowed := TRUE;
+        ELSIF v_can_create = 1 AND v_obj_type = 'TABLE'
+              AND v_sql_upper IS NOT NULL
+              AND REGEXP_LIKE(v_sql_upper, '(^|[[:space:]])ADD([[:space:]]|\()')
+              AND NOT REGEXP_LIKE(v_sql_upper, '(^|[[:space:]])(DROP|MODIFY|RENAME)[[:space:]]') THEN
+            v_allowed := TRUE;
+        END IF;
+    ELSIF v_sysevent = 'DROP' THEN
+        v_allowed := (v_can_drop = 1);
+    END IF;
+
+    IF NOT v_allowed THEN
+        v_deny_msg := 'ZIRI OAM : Accès DDL ' || v_sysevent || ' (' || v_obj_type || ') refusé pour ' || v_caller || ' sur le schéma ' || v_obj_owner || '.';
+        ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE.log_ddl_execution(
+            v_caller, v_obj_owner, v_sysevent, v_obj_type, v_obj_name, v_sql_raw, 'REJECTED', -20001, v_deny_msg
+        );
+        RAISE_APPLICATION_ERROR(-20001, v_deny_msg);
+    END IF;
+
+    -- 6. Trace d'audit des ordres DDL autorisés en direct
+    ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE.log_ddl_execution(
+        v_caller, v_obj_owner, v_sysevent, v_obj_type, v_obj_name, v_sql_raw, 'SUCCESS', NULL, NULL
+    );
+END;
 /
 
 -- ---------------------------------------------------------------------

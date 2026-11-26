@@ -64,6 +64,14 @@ class RoleHierarchyTest
         assert($pdbOrders[4] === 'GRANT RL_USER1 TO C##USER1 CONTAINER = CURRENT', "Liaison rôle local vers utilisateur développeur");
         echo "  [PASS] Validation des ordres locaux PDB (Règle 3).\n";
 
+        // 3b. Vérification présence du mode privilèges ANY + trigger TRG_ZIRIOAM_CONTROLLED_DDL
+        $pkgSql = file_get_contents(dirname(__DIR__) . '/installer/pdb/005_create_packages.sql');
+        $provPhp = file_get_contents(dirname(__DIR__) . '/app/Services/AccessProvisioningService.php');
+        assert($pkgSql !== false && strpos($pkgSql, 'TRG_ZIRIOAM_CONTROLLED_DDL') !== false, "Trigger PDB BEFORE DDL présent");
+        assert($pkgSql !== false && strpos($pkgSql, 'BEFORE DDL ON PLUGGABLE DATABASE') !== false, "Déclencheur BEFORE DDL ON PLUGGABLE DATABASE présent");
+        assert($provPhp !== false && strpos($provPhp, 'CREATE ANY TABLE') !== false && strpos($provPhp, 'ALTER ANY TABLE') !== false, "Privilèges ANY DDL configurés");
+        echo "  [PASS] Validation mode privilèges ANY + Trigger BEFORE DDL (TRG_ZIRIOAM_CONTROLLED_DDL).\n";
+
         // 4. Test Synchronisation des privilèges d'objets (Résolution ORA-00942) avec préfixe par défaut RL_
         $schema = 'SARAHTEST';
         $table = 'FICHIERS_LIGNE';

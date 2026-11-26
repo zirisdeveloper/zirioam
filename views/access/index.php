@@ -225,7 +225,7 @@
                             </div>
                         </div>
                         <div class="small text-muted mt-2">
-                            Ces droits s'exécutent via le moteur contrôlé <code>PKG_ZIRIOAM_DDL_ENGINE</code> (TABLE, VIEW, INDEX, SEQUENCE, CONSTRAINT, PROCEDURE, FUNCTION, PACKAGE, PACKAGE BODY, TRIGGER, TYPE, TYPE BODY, SYNONYM) sans octroi de privilèges <code>ANY</code>.
+                            Ces droits accordent les privilèges système <code>CREATE / ALTER / DROP ANY ...</code> sur <code>RL_&lt;USER&gt;</code> (TABLE, VIEW, INDEX, SEQUENCE, PROCEDURE, FUNCTION, PACKAGE, TRIGGER, TYPE, SYNONYM) tout en restant strictement cloisonnés au schéma cible par le trigger PDB <code>TRG_ZIRIOAM_CONTROLLED_DDL</code> (utilisable directement dans SQL*Plus / SQL Developer ou via <code>PKG_ZIRIOAM_DDL_ENGINE</code>).
                         </div>
                     </div>
                 </div>

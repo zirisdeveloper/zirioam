@@ -1004,6 +1004,11 @@ class DeveloperService
                         $this->db->executeDdl("GRANT {$localRole} TO C##{$localRole} CONTAINER = CURRENT");
                     } catch (\Throwable $g2) {}
 
+                    // E. Synchroniser les privilèges ANY DDL sur RL_<USER> depuis ZIRIOAM_DEVELOPER_ACCESS
+                    try {
+                        (new AccessProvisioningService($this->db))->syncDeveloperDdlAnyPrivileges($pdbName, $oracleUser, false);
+                    } catch (\Throwable $se) {}
+
                 } catch (\Throwable $pe) {
                     $errors[] = "PDB {$pdbName}: " . $pe->getMessage();
                 }

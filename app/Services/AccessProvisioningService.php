@@ -8,6 +8,45 @@ use App\Database\OracleConnection;
  */
 class AccessProvisioningService
 {
+    private const DDL_CREATE_ANY_PRIVS = [
+        'CREATE ANY TABLE',
+        'CREATE ANY VIEW',
+        'CREATE ANY INDEX',
+        'CREATE ANY SEQUENCE',
+        'CREATE ANY PROCEDURE',
+        'CREATE ANY TRIGGER',
+        'CREATE ANY TYPE',
+        'CREATE ANY SYNONYM',
+    ];
+
+    private const DDL_ALTER_ANY_PRIVS = [
+        'ALTER ANY TABLE',
+        'ALTER ANY INDEX',
+        'ALTER ANY SEQUENCE',
+        'ALTER ANY PROCEDURE',
+        'ALTER ANY TRIGGER',
+        'ALTER ANY TYPE',
+    ];
+
+    private const DDL_REPLACE_SUPPORT_PRIVS = [
+        'CREATE ANY VIEW',
+        'CREATE ANY PROCEDURE',
+        'CREATE ANY TRIGGER',
+        'CREATE ANY TYPE',
+        'CREATE ANY SYNONYM',
+    ];
+
+    private const DDL_DROP_ANY_PRIVS = [
+        'DROP ANY TABLE',
+        'DROP ANY VIEW',
+        'DROP ANY INDEX',
+        'DROP ANY SEQUENCE',
+        'DROP ANY PROCEDURE',
+        'DROP ANY TRIGGER',
+        'DROP ANY TYPE',
+        'DROP ANY SYNONYM',
+    ];
+
     private OracleConnection $db;
 
     public function __construct(OracleConnection $db)
@@ -699,6 +738,7 @@ class AccessProvisioningService
                 $hasPdbAccess = isset($activePdbBaseUsers[$base]);
 
                 $this->ensureDeveloperPdbSessionRoles($pdbName, $u, $hasPdbAccess, $vaultConn);
+                $this->syncDeveloperDdlAnyPrivileges($pdbName, $u, false, $vaultConn);
                 $this->grantTablespaceQuotaForSchema($u, '', $localRole);
                 $updatedDevs++;
             }
@@ -712,6 +752,130 @@ class AccessProvisioningService
             'synced_roles' => $syncedRoles,
             'updated_devs' => $updatedDevs,
         ];
+    }
+
+    /**
+     * Synchronise les privilèges système ANY (CREATE/ALTER/DROP ANY ...) sur le rôle local RL_<USER>
+     * en fonction de l'union des accès DDL actifs dans ZIRIOAM_DEVELOPER_ACCESS pour la PDB courante.
+     * Le cloisonnement par schéma reste assuré au niveau base par le trigger TRG_ZIRIOAM_CONTROLLED_DDL.
+     */
+    public function syncDeveloperDdlAnyPrivileges(
+        string $pdbName,
+        string $username,
+        bool $switchContainer = false,
+        ?OracleConnection $vaultConn = null
+    ): array {
+        if ($switchContainer) {
+            $this->db->switchContainer($pdbName);
+        }
+
+        $norm = strtoupper(trim($username));
+        $base = str_starts_with($norm, 'C##') ? substr($norm, 3) : $norm;
+        $oracleUser = 'C##' . $base;
+        $localRole  = 'RL_' . $base;
+
+        $canCreate = false;
+        $canAlter  = false;
+        $canDrop   = false;
+        try {
+            $agg = $this->db->queryOne(
+                "SELECT NVL(MAX(CAN_DDL_CREATE), 0) AS CAN_CREATE,
+                        NVL(MAX(CAN_DDL_ALTER), 0)  AS CAN_ALTER,
+                        NVL(MAX(CAN_DDL_DROP), 0)   AS CAN_DROP
+                 FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS
+                 WHERE UPPER(USERNAME) IN (:u, :b) AND STATUS = 'ACTIVE'",
+                ['u' => $oracleUser, 'b' => $base]
+            );
+            $canCreate = ((int)($agg['CAN_CREATE'] ?? 0)) === 1;
+            $canAlter  = ((int)($agg['CAN_ALTER'] ?? 0)) === 1;
+            $canDrop   = ((int)($agg['CAN_DROP'] ?? 0)) === 1;
+        } catch (\Throwable $e) {}
+
+        $desired = [];
+        if ($canCreate) {
+            $desired = array_merge($desired, self::DDL_CREATE_ANY_PRIVS);
+        }
+        if ($canAlter) {
+            $desired = array_merge($desired, self::DDL_ALTER_ANY_PRIVS, self::DDL_REPLACE_SUPPORT_PRIVS);
+        }
+        if ($canDrop) {
+            $desired = array_merge($desired, self::DDL_DROP_ANY_PRIVS);
+        }
+        $desired = array_values(array_unique($desired));
+
+        $universe = array_values(array_unique(array_merge(
+            self::DDL_CREATE_ANY_PRIVS,
+            self::DDL_ALTER_ANY_PRIVS,
+            self::DDL_REPLACE_SUPPORT_PRIVS,
+            self::DDL_DROP_ANY_PRIVS
+        )));
+
+        $current = [];
+        try {
+            $rows = $this->db->query("SELECT PRIVILEGE FROM DBA_SYS_PRIVS WHERE GRANTEE = :r", ['r' => $localRole]);
+            foreach ($rows as $row) {
+                if (!empty($row['PRIVILEGE'])) {
+                    $current[] = strtoupper(trim($row['PRIVILEGE']));
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        if (!empty($desired)) {
+            try { $this->db->executeDdl("CREATE ROLE {$localRole}"); } catch (\Throwable $e) {}
+        }
+
+        $granted = 0;
+        $revoked = 0;
+        $fallbackVc = $vaultConn;
+        $ownsVc = false;
+
+        $runPrivilegedDdl = function(string $ddl) use ($pdbName, &$fallbackVc, &$ownsVc): bool {
+            try {
+                $this->db->executeDdl($ddl);
+                return true;
+            } catch (\Throwable $e) {
+                if (!$fallbackVc) {
+                    try {
+                        $fallbackVc = (new OracleConnectionService())->getVaultConnection();
+                        if ($fallbackVc) {
+                            $fallbackVc->switchContainer($pdbName);
+                            $ownsVc = true;
+                        }
+                    } catch (\Throwable $ve) {
+                        $fallbackVc = null;
+                    }
+                }
+                if ($fallbackVc) {
+                    try {
+                        $fallbackVc->executeDdl($ddl);
+                        return true;
+                    } catch (\Throwable $ve) {}
+                }
+                return false;
+            }
+        };
+
+        try {
+            foreach ($desired as $priv) {
+                if (!in_array($priv, $current, true) && $runPrivilegedDdl("GRANT {$priv} TO {$localRole}")) {
+                    $granted++;
+                }
+            }
+
+            foreach ($universe as $priv) {
+                if (!in_array($priv, $desired, true) && in_array($priv, $current, true)) {
+                    if ($runPrivilegedDdl("REVOKE {$priv} FROM {$localRole}")) {
+                        $revoked++;
+                    }
+                }
+            }
+        } finally {
+            if ($ownsVc && $fallbackVc) {
+                try { $fallbackVc->close(); } catch (\Throwable $ce) {}
+            }
+        }
+
+        return ['granted' => $granted, 'revoked' => $revoked];
     }
 
     /**
@@ -986,7 +1150,10 @@ class AccessProvisioningService
             'dba' => $dbaUser,
         ]);
 
-        // 7. Audit
+        // 8. Synchroniser les privilèges système ANY (CREATE/ALTER/DROP ANY) sur RL_<USER>
+        $this->syncDeveloperDdlAnyPrivileges($pdbName, $oracleUser);
+
+        // 9. Audit
         try {
             $auditSql = "INSERT INTO ZIRIOAM_OWNER.ZIRIOAM_AUDIT_LOG 
                          (EVENT_TIME, DBA_USER, OPERATION, TARGET_DEVELOPER, TARGET_SCHEMA, RESULT, DETAILS)
@@ -1040,6 +1207,9 @@ class AccessProvisioningService
 
         // Mettre à jour ou supprimer de la matrice
         $this->db->execute("DELETE FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS WHERE ACCESS_ID = :id", ['id' => $accessId]);
+
+        // Recalculer et révoquer au besoin les privilèges ANY DDL sur RL_<USER>
+        $this->syncDeveloperDdlAnyPrivileges($pdbName, $normUser);
 
         // Audit
         try {
