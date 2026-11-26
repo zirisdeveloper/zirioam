@@ -387,6 +387,29 @@ END PKG_ZIRIOAM_DDL_ENGINE;
 
 CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AS
 
+    PROCEDURE log_ddl_execution (
+        p_username    IN VARCHAR2,
+        p_schema      IN VARCHAR2,
+        p_op          IN VARCHAR2,
+        p_obj_type    IN VARCHAR2,
+        p_obj_name    IN VARCHAR2,
+        p_ddl         IN CLOB,
+        p_status      IN VARCHAR2,
+        p_err_code    IN NUMBER,
+        p_err_msg     IN VARCHAR2
+    ) IS
+        PRAGMA AUTONOMOUS_TRANSACTION;
+    BEGIN
+        INSERT INTO ZIRIOAM_OWNER.ZIRIOAM_EXECUTION_HISTORY
+            (USERNAME, TARGET_SCHEMA, DDL_OPERATION, OBJECT_TYPE, OBJECT_NAME, DDL_STATEMENT, EXECUTION_STATUS, ORACLE_ERROR_CODE, ORACLE_ERROR_MESSAGE, EXECUTED_AT)
+        VALUES
+            (p_username, p_schema, p_op, p_obj_type, p_obj_name, p_ddl, p_status, p_err_code, p_err_msg, SYSTIMESTAMP);
+        COMMIT;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+    END log_ddl_execution;
+
     PROCEDURE execute_controlled_ddl (
         p_target_schema IN VARCHAR2,
         p_operation     IN VARCHAR2,
@@ -403,12 +426,11 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AS
         v_obj_name    VARCHAR2(128);
         v_has_access  NUMBER := 0;
         v_stmt_clean  VARCHAR2(32767);
-        v_exec_id     NUMBER;
         v_sqlcode     NUMBER;
         v_sqlerrm     VARCHAR2(4000);
     BEGIN
         -- 1. Récupération de l'identité réelle de la session appelante
-        v_caller   := SYS_CONTEXT('USERENV', 'SESSION_USER');
+        v_caller   := UPPER(TRIM(SYS_CONTEXT('USERENV', 'SESSION_USER')));
         v_schema   := UPPER(TRIM(p_target_schema));
         v_op       := UPPER(TRIM(p_operation));
         v_obj_type := UPPER(TRIM(p_object_type));
@@ -430,13 +452,16 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AS
         -- DROP => CAN_DDL_DROP
         IF v_op IN ('CREATE', 'ADD') THEN
             SELECT COUNT(*) INTO v_has_access FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS
-            WHERE USERNAME = v_caller AND TARGET_SCHEMA = v_schema AND CAN_DDL_CREATE = 1 AND STATUS = 'ACTIVE';
+            WHERE (UPPER(USERNAME) = v_caller OR ('C##' || UPPER(USERNAME)) = v_caller)
+              AND TARGET_SCHEMA = v_schema AND CAN_DDL_CREATE = 1 AND STATUS = 'ACTIVE';
         ELSIF v_op IN ('ALTER', 'REPLACE') THEN
             SELECT COUNT(*) INTO v_has_access FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS
-            WHERE USERNAME = v_caller AND TARGET_SCHEMA = v_schema AND CAN_DDL_ALTER = 1 AND STATUS = 'ACTIVE';
+            WHERE (UPPER(USERNAME) = v_caller OR ('C##' || UPPER(USERNAME)) = v_caller)
+              AND TARGET_SCHEMA = v_schema AND CAN_DDL_ALTER = 1 AND STATUS = 'ACTIVE';
         ELSIF v_op = 'DROP' THEN
             SELECT COUNT(*) INTO v_has_access FROM ZIRIOAM_OWNER.ZIRIOAM_DEVELOPER_ACCESS
-            WHERE USERNAME = v_caller AND TARGET_SCHEMA = v_schema AND CAN_DDL_DROP = 1 AND STATUS = 'ACTIVE';
+            WHERE (UPPER(USERNAME) = v_caller OR ('C##' || UPPER(USERNAME)) = v_caller)
+              AND TARGET_SCHEMA = v_schema AND CAN_DDL_DROP = 1 AND STATUS = 'ACTIVE';
         ELSE
             p_out_status := 'REJECTED';
             p_out_error  := 'Opération DDL non reconnue : ' || v_op;
@@ -446,12 +471,7 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AS
         IF v_has_access = 0 THEN
             p_out_status := 'REJECTED';
             p_out_error  := 'Accès refusé : Le développeur ' || v_caller || ' ne possède pas le droit DDL ' || v_op || ' sur le schéma ' || v_schema;
-            
-            -- Trace du refus
-            INSERT INTO ZIRIOAM_OWNER.ZIRIOAM_EXECUTION_HISTORY
-                (USERNAME, TARGET_SCHEMA, DDL_OPERATION, OBJECT_TYPE, OBJECT_NAME, DDL_STATEMENT, EXECUTION_STATUS, ORACLE_ERROR_MESSAGE, EXECUTED_AT)
-            VALUES
-                (v_caller, v_schema, v_op, v_obj_type, v_obj_name, p_ddl_statement, 'REJECTED', p_out_error, SYSTIMESTAMP);
+            log_ddl_execution(v_caller, v_schema, v_op, v_obj_type, v_obj_name, p_ddl_statement, 'REJECTED', NULL, p_out_error);
             RETURN;
         END IF;
 
@@ -464,37 +484,23 @@ CREATE OR REPLACE PACKAGE BODY ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE AS
            INSTR(v_stmt_clean, 'ALTER DATABASE') > 0 THEN
             p_out_status := 'REJECTED';
             p_out_error  := 'Clause interdite détectée dans l''instruction DDL.';
-            
-            INSERT INTO ZIRIOAM_OWNER.ZIRIOAM_EXECUTION_HISTORY
-                (USERNAME, TARGET_SCHEMA, DDL_OPERATION, OBJECT_TYPE, OBJECT_NAME, DDL_STATEMENT, EXECUTION_STATUS, ORACLE_ERROR_MESSAGE, EXECUTED_AT)
-            VALUES
-                (v_caller, v_schema, v_op, v_obj_type, v_obj_name, p_ddl_statement, 'REJECTED', p_out_error, SYSTIMESTAMP);
+            log_ddl_execution(v_caller, v_schema, v_op, v_obj_type, v_obj_name, p_ddl_statement, 'REJECTED', NULL, p_out_error);
             RETURN;
         END IF;
 
         -- 5. Exécution sécurisée de l'ordre DDL dans le schéma cible
         BEGIN
             EXECUTE IMMEDIATE p_ddl_statement;
-            
             p_out_status := 'SUCCESS';
             p_out_error  := NULL;
-
-            INSERT INTO ZIRIOAM_OWNER.ZIRIOAM_EXECUTION_HISTORY
-                (USERNAME, TARGET_SCHEMA, DDL_OPERATION, OBJECT_TYPE, OBJECT_NAME, DDL_STATEMENT, EXECUTION_STATUS, EXECUTED_AT)
-            VALUES
-                (v_caller, v_schema, v_op, v_obj_type, v_obj_name, p_ddl_statement, 'SUCCESS', SYSTIMESTAMP);
-
+            log_ddl_execution(v_caller, v_schema, v_op, v_obj_type, v_obj_name, p_ddl_statement, 'SUCCESS', NULL, NULL);
         EXCEPTION
             WHEN OTHERS THEN
                 v_sqlcode    := SQLCODE;
                 v_sqlerrm    := SUBSTR(SQLERRM, 1, 4000);
                 p_out_status := 'FAILED';
                 p_out_error  := v_sqlerrm;
-
-                INSERT INTO ZIRIOAM_OWNER.ZIRIOAM_EXECUTION_HISTORY
-                    (USERNAME, TARGET_SCHEMA, DDL_OPERATION, OBJECT_TYPE, OBJECT_NAME, DDL_STATEMENT, EXECUTION_STATUS, ORACLE_ERROR_CODE, ORACLE_ERROR_MESSAGE, EXECUTED_AT)
-                VALUES
-                    (v_caller, v_schema, v_op, v_obj_type, v_obj_name, p_ddl_statement, 'FAILED', v_sqlcode, v_sqlerrm, SYSTIMESTAMP);
+                log_ddl_execution(v_caller, v_schema, v_op, v_obj_type, v_obj_name, p_ddl_statement, 'FAILED', v_sqlcode, v_sqlerrm);
         END;
 
     END execute_controlled_ddl;
@@ -717,6 +723,14 @@ END PKG_ZIRIOAM_DEV_SELFSERVICE;
 /
 
 BEGIN
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT EXECUTE ON ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE TO ZIRIOAM_DEV_BASE_ROLE';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+        EXECUTE IMMEDIATE 'GRANT EXECUTE ON ZIRIOAM_OWNER.PKG_ZIRIOAM_DDL_ENGINE TO PUBLIC';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
     BEGIN
         EXECUTE IMMEDIATE 'GRANT EXECUTE ON ZIRIOAM_OWNER.PKG_ZIRIOAM_DEV_SELFSERVICE TO ZIRIOAM_DEV_BASE_ROLE';
     EXCEPTION WHEN OTHERS THEN NULL;
