@@ -543,9 +543,6 @@ class DeveloperService
             try {
                 $this->db->executeDdl("REVOKE CONNECT FROM {$commonRole} CONTAINER = CURRENT");
             } catch (\Throwable $e2) {}
-            try {
-                $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE NONE CONTAINER = CURRENT");
-            } catch (\Throwable $e) {}
 
             // Tuer les sessions actives éventuelles du développeur dans CDB$ROOT
             try {
@@ -629,19 +626,6 @@ class DeveloperService
                     }
                 }
 
-                // Désactiver également les rôles par défaut dans CDB$ROOT via Vault
-                try {
-                    $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE NONE CONTAINER = ALL");
-                } catch (\Throwable $e) {
-                    try {
-                        $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE NONE CONTAINER = CURRENT");
-                    } catch (\Throwable $e2) {
-                        try {
-                            $vaultConn->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE NONE");
-                        } catch (\Throwable $e3) {}
-                    }
-                }
-
                 // Révoquer le rôle commun via Vault
                 try {
                     $vaultConn->executeDdl("REVOKE {$commonRole} FROM {$oracleUser} CONTAINER = ALL");
@@ -661,41 +645,31 @@ class DeveloperService
                         ['username' => $norm, 'dba' => $dbaUser]
                     );
                     $lockedInRoot = true;
-                    return;
                 } catch (\Throwable $pe) {}
 
                 // Essai direct CONTAINER = ALL
-                try {
-                    $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK CONTAINER = ALL");
-                    $lockedInRoot = true;
-                    return;
-                } catch (\Throwable $de1) {}
-
-                // Essai direct CONTAINER = CURRENT
-                try {
-                    $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK CONTAINER = CURRENT");
-                    $lockedInRoot = true;
-                    return;
-                } catch (\Throwable $de2) {}
-
-                // Essai direct simple
-                try {
-                    $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK");
-                    $lockedInRoot = true;
-                } catch (\Throwable $de3) {
-                    $errors[] = "DBA root: " . $de3->getMessage();
+                if (!$lockedInRoot) {
+                    try {
+                        $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK CONTAINER = ALL");
+                        $lockedInRoot = true;
+                    } catch (\Throwable $de1) {}
                 }
 
-                // Désactiver également les rôles par défaut dans CDB$ROOT via DBA
-                try {
-                    $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE NONE CONTAINER = ALL");
-                } catch (\Throwable $e) {
+                // Essai direct CONTAINER = CURRENT
+                if (!$lockedInRoot) {
                     try {
-                        $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE NONE CONTAINER = CURRENT");
-                    } catch (\Throwable $e2) {
-                        try {
-                            $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE NONE");
-                        } catch (\Throwable $e3) {}
+                        $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK CONTAINER = CURRENT");
+                        $lockedInRoot = true;
+                    } catch (\Throwable $de2) {}
+                }
+
+                // Essai direct simple
+                if (!$lockedInRoot) {
+                    try {
+                        $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK");
+                        $lockedInRoot = true;
+                    } catch (\Throwable $de3) {
+                        $errors[] = "DBA root: " . $de3->getMessage();
                     }
                 }
 
@@ -739,86 +713,79 @@ class DeveloperService
 
         // 2. Verrouillage systématique dans TOUTES les PDBs ouvertes + Révocation de ZIRIOAM_DEV_BASE_ROLE et CREATE SESSION
         // C'est ce qui garantit qu'aucune connexion sqlplus vers //IP:1521/PDBTEST ne peut aboutir !
-        try {
-            $openPdbs = $this->db->query("
-                SELECT NAME FROM V\$PDBS 
-                WHERE OPEN_MODE = 'READ WRITE' AND UPPER(NAME) NOT IN ('PDB\$SEED')
-            ");
-
-            foreach ($openPdbs as $pdb) {
-                $pdbName = $pdb['NAME'] ?? '';
-                if (empty($pdbName)) continue;
-
-                try {
-                    $this->db->switchContainer($pdbName);
-
-                    // A. Verrouiller le compte utilisateur au niveau de la PDB (si supporté)
-                    try {
-                        $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK");
-                        $lockedInPdbCount++;
-                    } catch (\Throwable $le) {}
-
-                    // B. Désactiver tous les rôles par défaut du développeur dans cette PDB (DEFAULT ROLE NONE)
-                    try {
-                        $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE NONE");
-                    } catch (\Throwable $de) {}
-
-                    // C. Révoquer le rôle local RL_<USER> du compte développeur et du rôle commun
-                    try {
-                        $this->db->executeDdl("REVOKE {$localRole} FROM {$oracleUser}");
-                    } catch (\Throwable $r1) {}
-                    try {
-                        $this->db->executeDdl("REVOKE {$localRole} FROM C##{$localRole}");
-                    } catch (\Throwable $r2) {}
-
-                    // D. Révoquer ZIRIOAM_DEV_BASE_ROLE (qui détient CREATE SESSION) du rôle local et de l'utilisateur
-                    try {
-                        $this->db->executeDdl("REVOKE ZIRIOAM_DEV_BASE_ROLE FROM {$localRole}");
-                    } catch (\Throwable $r3) {}
-                    try {
-                        $this->db->executeDdl("REVOKE ZIRIOAM_DEV_BASE_ROLE FROM {$oracleUser}");
-                    } catch (\Throwable $r4) {}
-
-                    // E. Révoquer CREATE SESSION directement
-                    try {
-                        $this->db->executeDdl("REVOKE CREATE SESSION FROM {$localRole}");
-                    } catch (\Throwable $re) {}
-                    try {
-                        $this->db->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser}");
-                    } catch (\Throwable $rue) {}
-
-                    // F. Révoquer CONNECT au cas où
-                    try {
-                        $this->db->executeDdl("REVOKE CONNECT FROM {$localRole}");
-                    } catch (\Throwable $c1) {}
-                    try {
-                        $this->db->executeDdl("REVOKE CONNECT FROM {$oracleUser}");
-                    } catch (\Throwable $c2) {}
-
-                    // G. Tuer les sessions actives éventuelles du développeur dans cette PDB
-                    try {
-                        $activeSessions = $this->db->query(
-                            "SELECT SID, SERIAL# FROM V\$SESSION WHERE USERNAME = :usr",
-                            ['usr' => $oracleUser]
-                        );
-                        foreach ($activeSessions as $s) {
-                            try {
-                                $this->db->executeDdl("ALTER SYSTEM KILL SESSION '{$s['SID']},{$s['SERIAL#']}' IMMEDIATE");
-                            } catch (\Throwable $ke) {}
-                        }
-                    } catch (\Throwable $se) {}
-
-                } catch (\Throwable $pe) {
-                    $errors[] = "PDB {$pdbName}: " . $pe->getMessage();
-                }
-            }
-        } catch (\Throwable $e) {
-            $errors[] = "PDB scan: " . $e->getMessage();
-        } finally {
+        $this->executeInCdbRoot(function() use ($oracleUser, $localRole, &$lockedInPdbCount, &$errors) {
             try {
-                $this->db->switchContainer('CDB$ROOT');
-            } catch (\Throwable $e) {}
-        }
+                $openPdbs = $this->db->query("
+                    SELECT NAME FROM V\$PDBS 
+                    WHERE OPEN_MODE = 'READ WRITE' AND UPPER(NAME) NOT IN ('PDB\$SEED')
+                ");
+
+                foreach ($openPdbs as $pdb) {
+                    $pdbName = $pdb['NAME'] ?? '';
+                    if (empty($pdbName)) continue;
+
+                    try {
+                        $this->db->switchContainer($pdbName);
+
+                        // A. Verrouiller le compte utilisateur au niveau de la PDB (si supporté)
+                        try {
+                            $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT LOCK");
+                            $lockedInPdbCount++;
+                        } catch (\Throwable $le) {}
+
+                        // B. Révoquer le rôle local RL_<USER> du compte développeur et du rôle commun
+                        try {
+                            $this->db->executeDdl("REVOKE {$localRole} FROM {$oracleUser}");
+                        } catch (\Throwable $r1) {}
+                        try {
+                            $this->db->executeDdl("REVOKE {$localRole} FROM C##{$localRole}");
+                        } catch (\Throwable $r2) {}
+
+                        // D. Révoquer ZIRIOAM_DEV_BASE_ROLE (qui détient CREATE SESSION) du rôle local et de l'utilisateur
+                        try {
+                            $this->db->executeDdl("REVOKE ZIRIOAM_DEV_BASE_ROLE FROM {$localRole}");
+                        } catch (\Throwable $r3) {}
+                        try {
+                            $this->db->executeDdl("REVOKE ZIRIOAM_DEV_BASE_ROLE FROM {$oracleUser}");
+                        } catch (\Throwable $r4) {}
+
+                        // E. Révoquer CREATE SESSION directement
+                        try {
+                            $this->db->executeDdl("REVOKE CREATE SESSION FROM {$localRole}");
+                        } catch (\Throwable $re) {}
+                        try {
+                            $this->db->executeDdl("REVOKE CREATE SESSION FROM {$oracleUser}");
+                        } catch (\Throwable $rue) {}
+
+                        // F. Révoquer CONNECT au cas où
+                        try {
+                            $this->db->executeDdl("REVOKE CONNECT FROM {$localRole}");
+                        } catch (\Throwable $c1) {}
+                        try {
+                            $this->db->executeDdl("REVOKE CONNECT FROM {$oracleUser}");
+                        } catch (\Throwable $c2) {}
+
+                        // G. Tuer les sessions actives éventuelles du développeur dans cette PDB
+                        try {
+                            $activeSessions = $this->db->query(
+                                "SELECT SID, SERIAL# FROM V\$SESSION WHERE USERNAME = :usr",
+                                ['usr' => $oracleUser]
+                            );
+                            foreach ($activeSessions as $s) {
+                                try {
+                                    $this->db->executeDdl("ALTER SYSTEM KILL SESSION '{$s['SID']},{$s['SERIAL#']}' IMMEDIATE");
+                                } catch (\Throwable $ke) {}
+                            }
+                        } catch (\Throwable $se) {}
+
+                    } catch (\Throwable $pe) {
+                        $errors[] = "PDB {$pdbName}: " . $pe->getMessage();
+                    }
+                }
+            } catch (\Throwable $e) {
+                $errors[] = "PDB scan: " . $e->getMessage();
+            }
+        });
 
         // 3. VÉRIFICATION : Le compte est-il verrouillé dans CDB$ROOT ou dans au moins une PDB ?
         $actuallyLocked = $lockedInRoot || ($lockedInPdbCount > 0);
@@ -950,29 +917,35 @@ class DeveloperService
                         ['username' => $norm, 'dba' => $dbaUser]
                     );
                     $unlockedInRoot = true;
-                    return;
                 } catch (\Throwable $pe) {}
 
-                try {
-                    $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = ALL");
-                    $unlockedInRoot = true;
-                    return;
-                } catch (\Throwable $de1) {}
-
-                try {
-                    $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = CURRENT");
-                    $unlockedInRoot = true;
-                    return;
-                } catch (\Throwable $de2) {}
-
-                try {
-                    $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK");
-                    $unlockedInRoot = true;
-                } catch (\Throwable $de3) {
-                    $errors[] = "DBA root unlock: " . $de3->getMessage();
+                if (!$unlockedInRoot) {
+                    try {
+                        $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = ALL");
+                        $unlockedInRoot = true;
+                    } catch (\Throwable $de1) {}
                 }
 
-                // Réattribuer le rôle commun dans CDB$ROOT via DBA
+                if (!$unlockedInRoot) {
+                    try {
+                        $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK CONTAINER = CURRENT");
+                        $unlockedInRoot = true;
+                    } catch (\Throwable $de2) {}
+                }
+
+                if (!$unlockedInRoot) {
+                    try {
+                        $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK");
+                        $unlockedInRoot = true;
+                    } catch (\Throwable $de3) {
+                        $errors[] = "DBA root unlock: " . $de3->getMessage();
+                    }
+                }
+
+                // Réattribuer le rôle commun et CREATE SESSION dans CDB$ROOT via DBA
+                try {
+                    $this->db->executeDdl("GRANT CREATE SESSION TO {$commonRole} CONTAINER = ALL");
+                } catch (\Throwable $e) {}
                 try {
                     $this->db->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = ALL");
                 } catch (\Throwable $e) {}
@@ -980,59 +953,83 @@ class DeveloperService
         }
 
         // 2. Déverrouillage dans TOUTES les PDBs ouvertes + Ré-attribution de ZIRIOAM_DEV_BASE_ROLE et CREATE SESSION
-        try {
-            $openPdbs = $this->db->query("
-                SELECT NAME FROM V\$PDBS 
-                WHERE OPEN_MODE = 'READ WRITE' AND UPPER(NAME) NOT IN ('PDB\$SEED')
-            ");
-
-            foreach ($openPdbs as $pdb) {
-                $pdbName = $pdb['NAME'] ?? '';
-                if (empty($pdbName)) continue;
-
-                try {
-                    $this->db->switchContainer($pdbName);
-
-                    // A. Déverrouiller le compte utilisateur au niveau de la PDB
-                    try {
-                        $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK");
-                        $unlockedInPdbCount++;
-                    } catch (\Throwable $ue) {}
-
-                    // B. Ré-accorder CREATE SESSION au rôle local RL_<USER>
-                    try {
-                        $this->db->executeDdl("GRANT CREATE SESSION TO {$localRole}");
-                    } catch (\Throwable $ge) {}
-
-                    // C. Ré-accorder le rôle de base ZIRIOAM_DEV_BASE_ROLE au rôle local
-                    try {
-                        $this->db->executeDdl("GRANT ZIRIOAM_DEV_BASE_ROLE TO {$localRole}");
-                    } catch (\Throwable $ze) {}
-
-                    // D. Ré-attribuer le rôle local RL_<USER> au compte développeur dans la PDB et au rôle commun
-                    try {
-                        $this->db->executeDdl("GRANT {$localRole} TO {$oracleUser} CONTAINER = CURRENT");
-                    } catch (\Throwable $g1) {}
-                    try {
-                        $this->db->executeDdl("GRANT {$localRole} TO C##{$localRole} CONTAINER = CURRENT");
-                    } catch (\Throwable $g2) {}
-
-                    // E. Synchroniser les privilèges ANY DDL sur RL_<USER> depuis ZIRIOAM_DEVELOPER_ACCESS
-                    try {
-                        (new AccessProvisioningService($this->db))->syncDeveloperDdlAnyPrivileges($pdbName, $oracleUser, false);
-                    } catch (\Throwable $se) {}
-
-                } catch (\Throwable $pe) {
-                    $errors[] = "PDB {$pdbName}: " . $pe->getMessage();
-                }
-            }
-        } catch (\Throwable $e) {
-            $errors[] = "PDB scan: " . $e->getMessage();
-        } finally {
+        $this->executeInCdbRoot(function() use ($oracleUser, $localRole, $commonRole, &$unlockedInPdbCount, &$errors) {
             try {
-                $this->db->switchContainer('CDB$ROOT');
-            } catch (\Throwable $e) {}
-        }
+                $openPdbs = $this->db->query("
+                    SELECT NAME FROM V\$PDBS 
+                    WHERE OPEN_MODE = 'READ WRITE' AND UPPER(NAME) NOT IN ('PDB\$SEED')
+                ");
+
+                foreach ($openPdbs as $pdb) {
+                    $pdbName = $pdb['NAME'] ?? '';
+                    if (empty($pdbName)) continue;
+
+                    try {
+                        $this->db->switchContainer($pdbName);
+
+                        // A. Déverrouiller le compte utilisateur au niveau de la PDB
+                        try {
+                            $this->db->executeDdl("ALTER USER {$oracleUser} ACCOUNT UNLOCK");
+                            $unlockedInPdbCount++;
+                        } catch (\Throwable $ue) {}
+
+                        // B. S'assurer que RL_<USER> existe et dispose de CREATE SESSION + ZIRIOAM_DEV_BASE_ROLE
+                        try {
+                            $this->db->executeDdl("CREATE ROLE {$localRole}");
+                        } catch (\Throwable $ce) {}
+                        try {
+                            $this->db->executeDdl("GRANT CREATE SESSION TO {$localRole}");
+                        } catch (\Throwable $ge) {}
+                        try {
+                            $this->db->executeDdl("GRANT ZIRIOAM_DEV_BASE_ROLE TO {$localRole}");
+                        } catch (\Throwable $ze) {}
+
+                        // C. Ré-attribuer le rôle local RL_<USER> et le rôle commun au compte développeur dans la PDB
+                        try {
+                            $this->db->executeDdl("GRANT {$commonRole} TO {$oracleUser} CONTAINER = CURRENT");
+                        } catch (\Throwable $g0) {}
+                        try {
+                            $this->db->executeDdl("GRANT {$localRole} TO {$oracleUser} CONTAINER = CURRENT");
+                        } catch (\Throwable $g1) {}
+                        try {
+                            $this->db->executeDdl("GRANT {$localRole} TO {$commonRole} CONTAINER = CURRENT");
+                        } catch (\Throwable $g2) {}
+
+                        // D. Réparer si un ancien verrouillage avait laissé DEFAULT_ROLE = 'NO' dans cette PDB
+                        try {
+                            $roleRows = $this->db->query(
+                                "SELECT GRANTED_ROLE, DEFAULT_ROLE FROM DBA_ROLE_PRIVS WHERE GRANTEE = :usr",
+                                ['usr' => $oracleUser]
+                            );
+                            $hasDisabledDefault = false;
+                            $grantedRoles = [];
+                            foreach ($roleRows as $rr) {
+                                if (!empty($rr['GRANTED_ROLE'])) {
+                                    $grantedRoles[] = $rr['GRANTED_ROLE'];
+                                    if (strtoupper((string)($rr['DEFAULT_ROLE'] ?? '')) === 'NO') {
+                                        $hasDisabledDefault = true;
+                                    }
+                                }
+                            }
+                            if ($hasDisabledDefault && !empty($grantedRoles)) {
+                                $roleList = implode(', ', $grantedRoles);
+                                $this->db->executeDdl("ALTER USER {$oracleUser} DEFAULT ROLE {$roleList}");
+                            }
+                        } catch (\Throwable $re) {}
+
+                        // E. Synchroniser les privilèges ANY DDL sur RL_<USER> depuis ZIRIOAM_DEVELOPER_ACCESS
+                        try {
+                            (new AccessProvisioningService($this->db))->syncDeveloperDdlAnyPrivileges($pdbName, $oracleUser, false);
+                        } catch (\Throwable $se) {}
+
+                    } catch (\Throwable $pe) {
+                        $errors[] = "PDB {$pdbName}: " . $pe->getMessage();
+                    }
+                }
+            } catch (\Throwable $e) {
+                $errors[] = "PDB scan: " . $e->getMessage();
+            }
+        });
 
         // 3. VÉRIFICATION : Le compte est-il déverrouillé dans CDB$ROOT ou dans au moins une PDB ?
         $actuallyUnlocked = $unlockedInRoot || ($unlockedInPdbCount > 0);
