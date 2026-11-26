@@ -820,12 +820,25 @@ class DeveloperService
             } catch (\Throwable $e) {}
         }
 
-        // 3. VÉRIFICATION STRICTE : Le compte DOIT être verrouillé dans CDB$ROOT !
-        if (!$lockedInRoot) {
+        // 3. VÉRIFICATION : Le compte est-il verrouillé dans CDB$ROOT ou dans au moins une PDB ?
+        $actuallyLocked = $lockedInRoot || ($lockedInPdbCount > 0);
+        if (!$actuallyLocked) {
+            try {
+                $actuallyLocked = $this->executeInCdbRoot(function() use ($oracleUser) {
+                    $st = $this->db->queryOne(
+                        "SELECT COUNT(*) AS CNT FROM CDB_USERS WHERE USERNAME = :u AND COMMON = 'YES' AND ACCOUNT_STATUS LIKE '%LOCKED%'",
+                        ['u' => $oracleUser]
+                    );
+                    return ((int)($st['CNT'] ?? 0)) > 0;
+                });
+            } catch (\Throwable $e) {}
+        }
+
+        if (!$actuallyLocked) {
             $errDetail = !empty($errors) ? implode(' | ', $errors) : "Privilèges insuffisants";
             throw new \RuntimeException(
-                "Échec de verrouillage du compte commun dans CDB\$ROOT ({$errDetail}). " .
-                "Sous Oracle Database Vault, le mot de passe du compte habilité (C##VOLTMANAGER) est obligatoire pour verrouiller le compte au niveau global (CONTAINER = ALL)."
+                "Échec de verrouillage du compte ({$errDetail}). " .
+                "Sous Oracle Database Vault, le mot de passe du compte habilité (C##VOLTMANAGER) est obligatoire pour verrouiller le compte."
             );
         }
 
@@ -1021,12 +1034,25 @@ class DeveloperService
             } catch (\Throwable $e) {}
         }
 
-        // 3. VÉRIFICATION STRICTE : Le compte DOIT être déverrouillé dans CDB$ROOT !
-        if (!$unlockedInRoot) {
+        // 3. VÉRIFICATION : Le compte est-il déverrouillé dans CDB$ROOT ou dans au moins une PDB ?
+        $actuallyUnlocked = $unlockedInRoot || ($unlockedInPdbCount > 0);
+        if (!$actuallyUnlocked) {
+            try {
+                $actuallyUnlocked = $this->executeInCdbRoot(function() use ($oracleUser) {
+                    $st = $this->db->queryOne(
+                        "SELECT COUNT(*) AS CNT FROM CDB_USERS WHERE USERNAME = :u AND COMMON = 'YES' AND ACCOUNT_STATUS = 'OPEN'",
+                        ['u' => $oracleUser]
+                    );
+                    return ((int)($st['CNT'] ?? 0)) > 0;
+                });
+            } catch (\Throwable $e) {}
+        }
+
+        if (!$actuallyUnlocked) {
             $errDetail = !empty($errors) ? implode(' | ', $errors) : "Privilèges insuffisants";
             throw new \RuntimeException(
-                "Échec de déverrouillage du compte commun dans CDB\$ROOT ({$errDetail}). " .
-                "Sous Oracle Database Vault, le mot de passe du compte habilité (C##VOLTMANAGER) est obligatoire pour déverrouiller le compte au niveau global (CONTAINER = ALL)."
+                "Échec de déverrouillage du compte ({$errDetail}). " .
+                "Sous Oracle Database Vault, le mot de passe du compte habilité (C##VOLTMANAGER) est obligatoire pour déverrouiller le compte."
             );
         }
 
